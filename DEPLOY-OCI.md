@@ -435,17 +435,18 @@ To undo it: `sudo systemctl disable --now caddy`, delete the two ingress rules, 
 Run the preflight from the installed tree:
 
 ```bash
-cd /opt/discord-role-notifier
-sudo npm run doctor
+sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor'
 ```
 
+> **Why the wrapper.** `/opt/discord-role-notifier` is mode `700` owned by `discordbot`, so `opc` cannot `cd` into it — `cd: permission denied`, and `ls` fails the same way. `sudo cd` does not exist either, because `cd` is a shell builtin. Running `bash -c` under `sudo` changes directory as root and then drops nothing, which is exactly what you want here.
+>
 > **Run every command here against `/opt`, never against `~/discord-role-notifier`.** Dependencies are installed in `/opt` by `install.sh`, and `.env` lives there too. Running `npm run doctor` in the clone fails with `ERR_MODULE_NOT_FOUND: Cannot find package 'discord.js'` because the clone has no `node_modules`. The clone exists only to `git pull` from.
 
 Then send a real test notification. For DM delivery this DMs the **server owner** by default; add `--user <ID>` to test someone else. For channel delivery it posts in the channel:
 
 ```bash
-sudo npm run doctor -- --send-test
-sudo npm run doctor -- --send-test --user 123456789012345678
+sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor -- --send-test'
+sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor -- --send-test --user 123456789012345678'
 ```
 
 Finally, in Discord:
@@ -698,10 +699,11 @@ sudo systemctl enable --now docker
 sudo usermod -aG docker opc
 # log out and back in for the group change
 
-cd /opt/discord-role-notifier
-sudo docker compose -f deploy/docker-compose.yml up -d --build
-sudo docker compose -f deploy/docker-compose.yml logs -f
+sudo bash -c 'cd /opt/discord-role-notifier && docker compose -f deploy/docker-compose.yml up -d --build'
+sudo bash -c 'cd /opt/discord-role-notifier && docker compose -f deploy/docker-compose.yml logs -f'
 ```
+
+The `bash -c` wrapper is needed because `/opt/discord-role-notifier` is mode `700` owned by `discordbot` once `install.sh` has run, so `opc` cannot `cd` into it.
 
 Notes:
 
@@ -756,7 +758,8 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | Symptom | Fix |
 | --- | --- |
 | `npm: command not found` | Node install failed. Run `node -v`; re-run `curl -fsSL https://rpm.nodesource.com/setup_24.x \| sudo bash -` then `sudo dnf install -y nodejs`. |
-| `ERR_MODULE_NOT_FOUND: Cannot find package 'discord.js'` | You are in the clone. Dependencies live in `/opt`: `cd /opt/discord-role-notifier && sudo npm run doctor`. |
+| `ERR_MODULE_NOT_FOUND: Cannot find package 'discord.js'` | You are in the clone. Dependencies live in `/opt`: `sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor'`. |
+| `ls: cannot access '/opt/discord-role-notifier': Permission denied` | Expected. The directory is mode `700` owned by `discordbot`. Prefix the command with `sudo`. |
 | `status=203/EXEC` | `ExecStart` path is wrong. Check `which node` (should be `/usr/bin/node`) and edit the unit. |
 | `status=1/FAILURE` with config error | `sudo journalctl -u discord-role-notifier -n 50 --no-pager` shows the exact missing setting. |
 | Service keeps restarting | Usually an invalid token or missing intent. Fix `.env`, then `sudo systemctl restart discord-role-notifier`. |
