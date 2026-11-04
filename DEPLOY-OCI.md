@@ -766,7 +766,8 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | Certificate never issues | DNS must resolve to this box *before* Caddy starts. `getent hosts <name>`, and `dig +short <name>`. Fix DNS, then `sudo systemctl reload caddy`. |
 | `curl` prints nothing at all | `-s` swallowed the error. Re-run as `curl.exe -sS -I https://<host>`, then read the exit code: `6` = DNS, `7` = connection refused (ingress or firewalld), `28` = timeout, `35` = TLS/certificate. |
 | `curl: (6) Could not resolve host` | The name is wrong, or DNS has not propagated. If the host came from `sslip.io`, check the dashes match the IP exactly. |
-| `curl: (7) Failed to connect` | The ingress rule is missing or unsaved, `firewalld` has no `https` service, or nothing is listening on 443 yet. |
+| `curl: (7) Failed to connect` | The host answered with a reset: the path is open but nothing is listening on 443. `firewall-cmd` lacks `https`, or Caddy is not running. |
+| `curl: (28)` connection timed out | Nothing answered, so packets are being **dropped**, not refused. The ingress rule is missing, or it is on a security list the subnet does not use, or an NSG is attached to the VNIC. Check *Instance details → Primary VNIC → Subnet → Security lists*, and confirm the instance's public IP is the one the name resolves to. |
 | `200` with `--resolve …:127.0.0.1`, timeout without | Caddy and the certificate are fine; the problem is DNS or the security list. |
 | `curl https://…` times out | Ports 80/443 are not open in the OCI security list, or `firewall-cmd --list-all` lacks `http`/`https`. |
 | `502 Bad Gateway` from Caddy | The bot is not listening on `127.0.0.1:3000`: check `WEB_ENABLED=true` and `systemctl status discord-role-notifier`. |
