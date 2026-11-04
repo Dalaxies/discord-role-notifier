@@ -313,12 +313,14 @@ Because the tunnel ends on the server's loopback interface, you do **not** need 
 
 The tunnel needs an SSH client every time, which rules out a phone. To make the dashboard reachable from anywhere, put Caddy in front of it: Caddy gets a free Let's Encrypt certificate and proxies to the bot, which keeps listening on `127.0.0.1`.
 
-**You need a hostname.** Discord rejects a plain-HTTP redirect URI for anything other than `localhost`, so TLS is not optional. If you do not own a domain, `sslip.io` maps any IP to a name for free: `140.238.1.2` becomes `140-238-1-2.sslip.io` (or `140.238.1.2.sslip.io`). The name is derived from the address, so it changes only if the instance's public IP does — which makes a **reserved** public IP worth attaching.
+**You need a hostname.** Discord rejects a plain-HTTP redirect URI for anything other than `localhost`, so TLS is not optional. If you do not own a domain, `sslip.io` maps any IP to a name for free: `203.0.113.45` becomes `203-0-113-45.sslip.io` (or `203.0.113.45.sslip.io`). The name is derived from the address, so it changes only if the instance's public IP does — which makes a **reserved** public IP worth attaching.
+
+> The addresses throughout this section come from the documentation range (`203.0.113.0/24`) and will never be your server. Substitute your own: `curl -sS ifconfig.me` on the instance prints it, and the OCI console shows the same value as **Public IP address**. Testing a placeholder name is indistinguishable from a broken deployment — it resolves to somebody else's machine and times out.
 
 Derive your name and check it resolves before touching the server. From Windows:
 
 ```powershell
-$ip   = "140.238.1.2"                  # the instance's public IP
+$ip   = "203.0.113.45"                  # the instance's public IP
 $name = ($ip -replace '\.','-') + '.sslip.io'
 $name
 Resolve-DnsName $name -Type A
@@ -327,7 +329,7 @@ Resolve-DnsName $name -Type A
 From Linux or from the server itself:
 
 ```bash
-getent hosts 140-238-1-2.sslip.io
+getent hosts 203-0-113-45.sslip.io
 ```
 
 If nothing resolves, stop here: certificate issuance cannot succeed. If Windows resolves the name but the server does not, look at `/etc/resolv.conf` on the instance.
@@ -357,7 +359,7 @@ Port 80 is only used for the ACME challenge and the redirect to HTTPS; Caddy nev
 ```dotenv
 WEB_ENABLED=true
 WEB_HOST=127.0.0.1
-OAUTH_REDIRECT_URI=https://140-238-1-2.sslip.io/auth/callback
+OAUTH_REDIRECT_URI=https://203-0-113-45.sslip.io/auth/callback
 WEB_COOKIE_SECURE=true
 ```
 
@@ -373,7 +375,7 @@ sudo systemctl restart discord-role-notifier
 
 ```bash
 cd ~/discord-role-notifier
-sudo bash deploy/setup-caddy.sh 140-238-1-2.sslip.io
+sudo bash deploy/setup-caddy.sh 203-0-113-45.sslip.io
 ```
 
 The script installs Caddy, writes a `Caddyfile` that proxies to `127.0.0.1:3000`, opens 80/443 in `firewalld`, handles SELinux, and starts the unit. Pass a bare IP and it derives the `sslip.io` name for you.
@@ -381,20 +383,20 @@ The script installs Caddy, writes a `Caddyfile` that proxies to `127.0.0.1:3000`
 **4. Check it.** From the server:
 
 ```bash
-curl -sSI https://140-238-1-2.sslip.io | head -n 1     # HTTP/2 200
+curl -sSI https://203-0-113-45.sslip.io | head -n 1     # HTTP/2 200
 sudo journalctl -u caddy -n 30 --no-pager             # certificate issued
 ```
 
 `-s` hides the error message as well as the progress, so a failed request prints **nothing at all** and looks like success with no output. Use `-sS` when you want to see why it failed, or:
 
 ```bash
-curl -sS -o /dev/null -w 'status=%{http_code}\n' https://140-238-1-2.sslip.io/
+curl -sS -o /dev/null -w 'status=%{http_code}\n' https://203-0-113-45.sslip.io/
 ```
 
 To test the certificate without depending on DNS *or* the ingress rule, point curl at the local listener while keeping the real name for SNI and Host:
 
 ```bash
-curl -sSI --resolve 140-238-1-2.sslip.io:443:127.0.0.1 https://140-238-1-2.sslip.io/ | head -n 1
+curl -sSI --resolve 203-0-113-45.sslip.io:443:127.0.0.1 https://203-0-113-45.sslip.io/ | head -n 1
 ```
 
 A `200` here means Caddy is serving and the certificate is valid, so any remaining failure is the network path — DNS or the security list. This is the fastest way to tell those two apart.
@@ -402,7 +404,7 @@ A `200` here means Caddy is serving and the certificate is valid, so any remaini
 From Windows, use `curl.exe` and `Select-Object -First 1`: `curl` there is an alias for `Invoke-WebRequest`, and `head` does not exist.
 
 ```powershell
-curl.exe -sS -I https://140-238-1-2.sslip.io | Select-Object -First 1
+curl.exe -sS -I https://203-0-113-45.sslip.io | Select-Object -First 1
 ```
 
 First issuance takes a few seconds; if it fails, the journal names the reason (usually DNS, or port 80 blocked).

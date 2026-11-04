@@ -274,7 +274,7 @@ To reach it from anywhere — including a phone — `deploy/setup-caddy.sh` puts
 sudo bash deploy/setup-caddy.sh 140.238.1.2
 ```
 
-A bare IP is converted to a free `140-238-1-2.sslip.io` name, so no domain is needed. Then set `OAUTH_REDIRECT_URI=https://<host>/auth/callback` (and register the same URI in the portal), `WEB_COOKIE_SECURE=true`, and allow TCP 80/443 in the OCI security list. Keep `WEB_HOST=127.0.0.1`: only Caddy is exposed.
+A bare IP is converted to a free `203-0-113-45.sslip.io` name, so no domain is needed. Then set `OAUTH_REDIRECT_URI=https://<host>/auth/callback` (and register the same URI in the portal), `WEB_COOKIE_SECURE=true`, and allow TCP 80/443 in the OCI security list. Keep `WEB_HOST=127.0.0.1`: only Caddy is exposed.
 
 Discord requires HTTPS for a non-localhost redirect URI, so a certificate is a prerequisite, not a nicety. Full walkthrough in [DEPLOY-OCI.md](DEPLOY-OCI.md#publishing-the-dashboard-over-https).
 
