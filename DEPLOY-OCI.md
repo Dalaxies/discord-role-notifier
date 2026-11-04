@@ -323,12 +323,23 @@ getent hosts 140-238-1-2.sslip.io
 
 If that prints nothing, stop here: certificate issuance cannot succeed.
 
-**1. Allow the ports in OCI.** Console → **Networking → Virtual Cloud Networks** → your VCN → the public subnet → **Security Lists** → default list → **Add Ingress Rules**:
+**1. Allow the ports in OCI.** Console → **Networking → Virtual Cloud Networks** → your VCN → the public subnet → **Security Lists** → default list → **Add Ingress Rules**. Fill the form like this:
 
-| Stateless | Source | IP protocol | Destination port |
-| --- | --- | --- | --- |
-| No | `0.0.0.0/0` | TCP | `80` |
-| No | `0.0.0.0/0` | TCP | `443` |
+| Field | Value |
+| --- | --- |
+| Stateless | unchecked (stateful) |
+| Source Type | `CIDR` |
+| Source CIDR Block | `0.0.0.0/0` |
+| IP Protocol | `TCP` |
+| Source Port Range | `All` (leave the default) |
+| Destination Port Range | `80,443` |
+| Description | `Caddy: ACME + HTTPS dashboard` |
+
+One rule covers both ports; the console accepts a comma-separated list. If your form rejects it, add two rules instead, one per port.
+
+- **Stateless stays off.** A stateless rule permits traffic in one direction only, so the server's replies would be dropped unless you also add a mirror-image egress rule. Stateful (the default) tracks the connection and lets responses back automatically.
+- **Source Port Range is the field people get wrong.** Clients connect from a random ephemeral port, so restricting it to 80/443 here blocks every connection. Only the *destination* port is fixed; source must be `All`.
+- If a **Network Security Group** is attached to the instance's VNIC, the rule belongs on the NSG instead — and traffic must be allowed by both the security list and the NSG.
 
 Port 80 is only used for the ACME challenge and the redirect to HTTPS; Caddy never serves content over it.
 
