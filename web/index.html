@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ascend · Role notifier</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-text">
+          <strong>Ascend</strong>
+          <span>Role notifier</span>
+        </div>
+      </div>
+
+      <div class="account" id="account" hidden>
+        <span class="pill" id="guild-pill"></span>
+        <img class="avatar" id="avatar" alt="" width="28" height="28" />
+        <span class="account-name" id="username"></span>
+        <button type="button" class="ghost" id="logout">Sign out</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="card login-card" id="login" hidden>
+        <h1>Sign in with Discord</h1>
+        <p class="muted">
+          This dashboard is limited to members who can manage the server.
+        </p>
+        <a class="button primary" id="login-link" href="/auth/login">Continue with Discord</a>
+        <p class="notice" id="login-note" hidden></p>
+      </section>
+
+      <div class="layout" id="dashboard" hidden>
+        <div class="column">
+          <section class="card">
+            <header class="card-head">
+              <h2>Welcome role</h2>
+              <span class="tag" id="role-tag">—</span>
+            </header>
+            <p class="muted">
+              A member receives the welcome message when this role is added. Changes apply
+              immediately.
+            </p>
+            <label class="field">
+              <span>Role</span>
+              <select id="role-select"></select>
+            </label>
+            <div class="actions">
+              <button type="button" class="primary" id="save-role">Save role</button>
+              <span class="hint" id="role-hint"></span>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-head">
+              <h2>Welcome message</h2>
+              <span class="tag" id="message-file">—</span>
+            </header>
+            <p class="muted">
+              Sent as a direct message. Markdown works, and edits apply to the next DM — no
+              restart needed.
+            </p>
+            <label class="field">
+              <span class="sr-only">Welcome message</span>
+              <textarea id="message" spellcheck="false" rows="16"></textarea>
+            </label>
+            <div class="actions">
+              <button type="button" class="primary" id="save-message">Save message</button>
+              <span class="hint" id="counter"></span>
+            </div>
+            <details class="placeholders">
+              <summary>Placeholders</summary>
+              <code>{user} {username} {displayName} {server} {role} {roleName} {memberCount} {assignedBy} {userId}</code>
+            </details>
+          </section>
+        </div>
+
+        <section class="card logs-card">
+          <header class="card-head">
+            <h2>Activity</h2>
+            <div class="log-tools">
+              <select id="level" aria-label="Log level">
+                <option value="all">All levels</option>
+                <option value="info">Info +</option>
+                <option value="warn">Warnings +</option>
+                <option value="error">Errors only</option>
+              </select>
+              <label class="check"><input type="checkbox" id="pause" /> Pause</label>
+            </div>
+          </header>
+          <ol class="log" id="logs" aria-live="polite"></ol>
+          <p class="log-empty muted" id="log-empty">No activity yet.</p>
+        </section>
+      </div>
+    </main>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

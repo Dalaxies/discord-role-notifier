@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightly backup of the Discord role notifier state
+Documentation=file:///opt/discord-role-notifier/DEPLOY-OCI.md
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30min
+# Catch up after a reboot or a night the instance was off.
+Persistent=true
+Unit=discord-role-notifier-backup.service
+
+[Install]
+WantedBy=timers.target

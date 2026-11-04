@@ -1,0 +1,10 @@
+node_modules
+.env
+.env.*
+.git
+.gitignore
+bot.tgz
+data
+*.log
+README.md
+DEPLOY-OCI.md

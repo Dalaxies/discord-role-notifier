@@ -1,0 +1,36 @@
+[Unit]
+Description=Discord role notifier
+Documentation=file:///opt/discord-role-notifier/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=discordbot
+Group=discordbot
+WorkingDirectory=/opt/discord-role-notifier
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=10
+TimeoutStopSec=20
+KillSignal=SIGTERM
+UMask=0077
+
+# Hardening: the bot only needs to read its own directory and talk outbound.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# The dashboard edits the template and stores its settings here.
+ReadWritePaths=/opt/discord-role-notifier/templates /opt/discord-role-notifier/data
+
+[Install]
+WantedBy=multi-user.target

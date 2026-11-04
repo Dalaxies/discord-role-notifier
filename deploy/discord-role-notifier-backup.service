@@ -1,0 +1,28 @@
+[Unit]
+Description=Discord role notifier state backup
+Documentation=file:///opt/discord-role-notifier/DEPLOY-OCI.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Installed by deploy/install.sh as a root-owned copy, so the discordbot user
+# cannot change what this runs.
+ExecStart=/usr/local/sbin/discord-role-notifier-backup
+Environment=APP_DIR=/opt/discord-role-notifier
+
+# root is needed only to read .env (mode 600, owned by discordbot). The unit
+# writes nowhere except the backup directory.
+User=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadOnlyPaths=/opt/discord-role-notifier
+ReadWritePaths=/var/backups/discord-role-notifier

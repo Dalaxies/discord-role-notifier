@@ -1,0 +1,21 @@
+# Optional deployment: docker compose -f deploy/docker-compose.yml up -d --build
+services:
+  bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: discord-role-notifier:latest
+    container_name: discord-role-notifier
+    env_file:
+      - ../.env
+    restart: unless-stopped
+    init: true
+    # Dashboard: set WEB_HOST=0.0.0.0 in .env before enabling this, then reach
+    # it through the host firewall/reverse proxy. For local-only use, skip it.
+    # ports:
+    #   - "127.0.0.1:3000:3000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,21 @@
+{
+  "name": "discord-role-notifier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sends a Discord message whenever a member is given a specific role.",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "doctor": "node src/doctor.js",
+    "send-welcome": "node scripts/send-welcome.mjs"
+  },
+  "dependencies": {
+    "discord.js": "^14.28.1",
+    "dotenv": "^18.0.9"
+  }
+}
