@@ -8,6 +8,11 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# Anything this script creates is root-only by default. The .env backup below
+# contains the bot token, and root's usual umask of 022 would make it readable
+# by every account on the box for the duration of the install.
+umask 077
+
 APP_DIR=/opt/discord-role-notifier
 SERVICE_NAME=discord-role-notifier
 SERVICE_USER=discordbot
@@ -37,9 +42,14 @@ if [[ "${SOURCE_DIR}" != "${APP_DIR}" ]]; then
   echo "==> Copying application to ${APP_DIR}"
   mkdir -p "${APP_DIR}"
 
-  # Keep an existing .env across upgrades.
+  # Keep an existing .env across upgrades. It is also excluded from the delete
+  # below and from the tar, so this copy is belt-and-braces: if anything goes
+  # wrong mid-install, the original is still in /tmp.
   if [[ -f "${APP_DIR}/.env" ]]; then
-    cp "${APP_DIR}/.env" /tmp/discord-role-notifier.env.bak
+    cp -p "${APP_DIR}/.env" /tmp/discord-role-notifier.env.bak
+    echo "    Keeping the existing ${APP_DIR}/.env"
+  else
+    echo "    No existing .env found; one will be created from .env.example"
   fi
 
   find "${APP_DIR}" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} +
@@ -52,6 +62,7 @@ if [[ "${SOURCE_DIR}" != "${APP_DIR}" ]]; then
 
   if [[ -f /tmp/discord-role-notifier.env.bak ]]; then
     mv /tmp/discord-role-notifier.env.bak "${APP_DIR}/.env"
+    echo "    Restored ${APP_DIR}/.env"
   fi
 fi
 
