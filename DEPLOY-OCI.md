@@ -198,6 +198,15 @@ You should see `src`, `deploy`, `package.json`, `.env.example`, etc. The reposit
 
 > Do not clone straight into `/opt/discord-role-notifier`. The installer `chown`s that directory to `discordbot`, after which git refuses to operate on it ("detected dubious ownership"), and the fix is an explicit `safe.directory` exception that is easy to forget on the next rebuild.
 
+**Which tree you operate from matters.** Two directories now exist, with different jobs:
+
+| Path | Owns | Use it for |
+| --- | --- | --- |
+| `~/discord-role-notifier` | the git history | `git pull` only |
+| `/opt/discord-role-notifier` | `node_modules`, `.env`, the running code | `npm run doctor`, `npm run send-welcome`, editing `.env` |
+
+Commands run in the clone fail with `ERR_MODULE_NOT_FOUND: Cannot find package 'discord.js'`, because dependencies are installed in `/opt`.
+
 ---
 
 ## 7. Configure and install
@@ -423,12 +432,14 @@ To undo it: `sudo systemctl disable --now caddy`, delete the two ingress rules, 
 
 ## 8. Test end to end
 
-Run the preflight from the server:
+Run the preflight from the installed tree:
 
 ```bash
 cd /opt/discord-role-notifier
 sudo npm run doctor
 ```
+
+> **Run every command here against `/opt`, never against `~/discord-role-notifier`.** Dependencies are installed in `/opt` by `install.sh`, and `.env` lives there too. Running `npm run doctor` in the clone fails with `ERR_MODULE_NOT_FOUND: Cannot find package 'discord.js'` because the clone has no `node_modules`. The clone exists only to `git pull` from.
 
 Then send a real test notification. For DM delivery this DMs the **server owner** by default; add `--user <ID>` to test someone else. For channel delivery it posts in the channel:
 
@@ -745,6 +756,7 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | Symptom | Fix |
 | --- | --- |
 | `npm: command not found` | Node install failed. Run `node -v`; re-run `curl -fsSL https://rpm.nodesource.com/setup_24.x \| sudo bash -` then `sudo dnf install -y nodejs`. |
+| `ERR_MODULE_NOT_FOUND: Cannot find package 'discord.js'` | You are in the clone. Dependencies live in `/opt`: `cd /opt/discord-role-notifier && sudo npm run doctor`. |
 | `status=203/EXEC` | `ExecStart` path is wrong. Check `which node` (should be `/usr/bin/node`) and edit the unit. |
 | `status=1/FAILURE` with config error | `sudo journalctl -u discord-role-notifier -n 50 --no-pager` shows the exact missing setting. |
 | Service keeps restarting | Usually an invalid token or missing intent. Fix `.env`, then `sudo systemctl restart discord-role-notifier`. |
