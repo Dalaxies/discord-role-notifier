@@ -378,24 +378,32 @@ sudo bash deploy/setup-caddy.sh 140-238-1-2.sslip.io
 
 The script installs Caddy, writes a `Caddyfile` that proxies to `127.0.0.1:3000`, opens 80/443 in `firewalld`, handles SELinux, and starts the unit. Pass a bare IP and it derives the `sslip.io` name for you.
 
-**4. Check it.** From Windows:
-
-```powershell
-curl.exe -sS -I https://140-238-1-2.sslip.io | Select-Object -First 1
-```
-
-From the server:
+**4. Check it.** From the server:
 
 ```bash
 curl -sSI https://140-238-1-2.sslip.io | head -n 1     # HTTP/2 200
 sudo journalctl -u caddy -n 30 --no-pager             # certificate issued
 ```
 
-Three things to get right in that command, because each one turns a failure into silence:
+`-s` hides the error message as well as the progress, so a failed request prints **nothing at all** and looks like success with no output. Use `-sS` when you want to see why it failed, or:
 
-- **`curl.exe`, not `curl`.** In Windows PowerShell `curl` is an alias for `Invoke-WebRequest`, which takes different arguments.
-- **`head` does not exist in PowerShell.** Use `Select-Object -First 1`.
-- **`-s` hides the error.** `-sS` stays quiet on success but still prints the reason on failure.
+```bash
+curl -sS -o /dev/null -w 'status=%{http_code}\n' https://140-238-1-2.sslip.io/
+```
+
+To test the certificate without depending on DNS *or* the ingress rule, point curl at the local listener while keeping the real name for SNI and Host:
+
+```bash
+curl -sSI --resolve 140-238-1-2.sslip.io:443:127.0.0.1 https://140-238-1-2.sslip.io/ | head -n 1
+```
+
+A `200` here means Caddy is serving and the certificate is valid, so any remaining failure is the network path — DNS or the security list. This is the fastest way to tell those two apart.
+
+From Windows, use `curl.exe` and `Select-Object -First 1`: `curl` there is an alias for `Invoke-WebRequest`, and `head` does not exist.
+
+```powershell
+curl.exe -sS -I https://140-238-1-2.sslip.io | Select-Object -First 1
+```
 
 First issuance takes a few seconds; if it fails, the journal names the reason (usually DNS, or port 80 blocked).
 
@@ -759,6 +767,7 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | `curl` prints nothing at all | `-s` swallowed the error. Re-run as `curl.exe -sS -I https://<host>`, then read the exit code: `6` = DNS, `7` = connection refused (ingress or firewalld), `28` = timeout, `35` = TLS/certificate. |
 | `curl: (6) Could not resolve host` | The name is wrong, or DNS has not propagated. If the host came from `sslip.io`, check the dashes match the IP exactly. |
 | `curl: (7) Failed to connect` | The ingress rule is missing or unsaved, `firewalld` has no `https` service, or nothing is listening on 443 yet. |
+| `200` with `--resolve …:127.0.0.1`, timeout without | Caddy and the certificate are fine; the problem is DNS or the security list. |
 | `curl https://…` times out | Ports 80/443 are not open in the OCI security list, or `firewall-cmd --list-all` lacks `http`/`https`. |
 | `502 Bad Gateway` from Caddy | The bot is not listening on `127.0.0.1:3000`: check `WEB_ENABLED=true` and `systemctl status discord-role-notifier`. |
 | `502` but the bot is up | SELinux blocking the proxy: `sudo ausearch -m avc -ts recent`, then `sudo setsebool -P httpd_can_network_connect on`. |
