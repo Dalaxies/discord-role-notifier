@@ -1,0 +1,4 @@
+# The bot runs on Linux and its deploy assets are shell scripts and systemd
+# units, where a stray CRLF breaks execution. Normalise everything to LF in the
+# repository and in the working tree, on every platform.
+* text=auto eol=lf
