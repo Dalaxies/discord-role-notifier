@@ -315,13 +315,22 @@ The tunnel needs an SSH client every time, which rules out a phone. To make the 
 
 **You need a hostname.** Discord rejects a plain-HTTP redirect URI for anything other than `localhost`, so TLS is not optional. If you do not own a domain, `sslip.io` maps any IP to a name for free: `140.238.1.2` becomes `140-238-1-2.sslip.io` (or `140.238.1.2.sslip.io`). The name is derived from the address, so it changes only if the instance's public IP does — which makes a **reserved** public IP worth attaching.
 
-Verify the name resolves before touching the server:
+Derive your name and check it resolves before touching the server. From Windows:
+
+```powershell
+$ip   = "140.238.1.2"                  # the instance's public IP
+$name = ($ip -replace '\.','-') + '.sslip.io'
+$name
+Resolve-DnsName $name -Type A
+```
+
+From Linux or from the server itself:
 
 ```bash
 getent hosts 140-238-1-2.sslip.io
 ```
 
-If that prints nothing, stop here: certificate issuance cannot succeed.
+If nothing resolves, stop here: certificate issuance cannot succeed. If Windows resolves the name but the server does not, look at `/etc/resolv.conf` on the instance.
 
 **1. Allow the ports in OCI.** Console → **Networking → Virtual Cloud Networks** → your VCN → the public subnet → **Security Lists** → default list → **Add Ingress Rules**. Fill the form like this:
 
