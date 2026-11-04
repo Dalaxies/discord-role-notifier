@@ -534,10 +534,17 @@ export async function startWebServer(options) {
     );
   }
 
-  if (localOnly) {
-    logger.info('Dashboard is local-only. Reach it with: ssh -L 3000:localhost:3000 <user>@<server>');
-  } else if (redirectUri.startsWith('https://')) {
-    logger.info(`Dashboard is public at ${redirectUri.replace(/\/auth\/callback\/?$/, '')}`);
+  const publicOrigin = redirectUri.replace(/\/auth\/callback\/?$/, '');
+  const behindProxy = redirectUri.startsWith('https://');
+
+  if (localOnly && behindProxy) {
+    // The recommended setup: Caddy owns 80/443 and dials loopback, so the bot
+    // itself is still loopback-bound while being publicly reachable.
+    logger.info(`Dashboard is published at ${publicOrigin} through a reverse proxy (bound to ${host}:${port}).`);
+  } else if (localOnly) {
+    logger.info(`Dashboard is local-only at http://${host}:${port}. Reach it with: ssh -L 3000:localhost:3000 <user>@<server>`);
+  } else if (behindProxy) {
+    logger.info(`Dashboard is public at ${publicOrigin}`);
     logger.info('TLS and rate limiting are expected in front of it: see "Publishing over HTTPS" in DEPLOY-OCI.md.');
   } else {
     logger.warn(
