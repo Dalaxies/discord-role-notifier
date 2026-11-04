@@ -5,18 +5,24 @@ Sends a **direct message (DM)** to a member whenever they are given a specific r
 | Setting | Value |
 | --- | --- |
 | Server (guild) ID | `1499114258007588914` |
-| Role ID | `1555000310441713664` |
+| Role ID | `1555015410112270458` |
 | Runtime | Node.js 20+ (24 LTS recommended) |
 | Library | discord.js 14 |
 | Hosting | Any small Linux VM — see [DEPLOY-OCI.md](DEPLOY-OCI.md) |
 
-Example DM:
+Example DM — the default `templates/welcome.md`, abridged:
 
-> You were assigned the **@Verified** role in **My Server**.
+> ## <:Ascend:1499180592699543582>  WELCOME TO ASCEND
+> We're glad to have you as part of the guild. <:Alliance:1567391204654710834> Added roles to give you full access to guild channels.
 >
-> **Role assigned**
-> Role: @Verified · Assigned by: @Moderator
-> Account created: 3 years ago · Joined server: 4 months ago
+> ### 🛡️ GET STARTED
+> ### **1. Set Up Your Roles**
+> https://discord.com/channels/1499114258007588914/1555116745793212497
+> Choose your Discord roles to access relevant channels, …
+>
+> **Welcome to Ascend. Your journey starts here.**
+
+That message is sent verbatim from `templates/welcome.md` and re-read on every notification, so edits take effect without a restart. A details embed (role, assigner, account age) follows it by default; set `EMBED_ENABLED=false` to send the text alone.
 
 The message text, embed title and colour are configurable, and a preflight script (`npm run doctor`) checks the token, IDs and permissions before you deploy.
 
@@ -74,7 +80,7 @@ In Discord: **User Settings → Advanced → Developer Mode** → ON. Then:
 - Right-click the role → **Copy Role ID** → `ROLE_ID`
 - For channel delivery only: right-click the target channel → **Copy Channel ID** → `CHANNEL_ID`
 
-The defaults are already set for server `1499114258007588914` and role `1555000310441713664`.
+The defaults are already set for server `1499114258007588914` and role `1555015410112270458`.
 
 ---
 
@@ -102,11 +108,11 @@ If you want channel delivery instead, also set `CHANNEL_ID` and change `DELIVERY
 | --- | --- | --- |
 | `DISCORD_TOKEN` | — | **Required.** Bot token from the Developer Portal. |
 | `GUILD_ID` | `1499114258007588914` | Server to watch. |
-| `ROLE_ID` | `1555000310441713664` | Role that triggers a notification when added. |
+| `ROLE_ID` | `1555015410112270458` | Role that triggers a notification when added. |
 | `DELIVERY` | `dm` | `dm`, `channel` or `both`. |
 | `CHANNEL_ID` | *(empty)* | Channel for `channel`/`both`. Empty = the server's system channel. Not used for DM-only. |
-| `MESSAGE_TEMPLATE` | DM: `You were assigned the **{role}** role in **{server}**.`<br>Channel: `👋 {user} was assigned the **{role}** role.` | Text above the embed. Empty = embed only (no ping). |
-| `MESSAGE_TEMPLATE_FILE` | *(unset)* | Path to a file containing the message (relative to the project directory). Takes precedence over `MESSAGE_TEMPLATE`. Ideal for multi-line messages. |
+| `MESSAGE_TEMPLATE` | `templates/welcome.md` for DM | Text above the embed. An explicit value here overrides the bundled file. Empty = embed only (no ping). |
+| `MESSAGE_TEMPLATE_FILE` | `templates/welcome.md` for `dm`/`both`, *(unset)* for `channel` | Path to a file containing the message (relative to the project directory). Takes precedence over `MESSAGE_TEMPLATE`. Ideal for multi-line messages. |
 | `EMBED_ENABLED` | `true` | Send the details embed after the text. Set `false` to send only your message. |
 | `EMBED_TITLE` | `Role assigned` | Embed title. |
 | `EMBED_COLOR` | `#57F287` | Embed colour, hex. |
@@ -120,7 +126,7 @@ If you want channel delivery instead, also set `CHANNEL_ID` and change `DELIVERY
 
 ### Multi-line messages
 
-Put the text in a file and point to it:
+DM delivery already sends `templates/welcome.md` verbatim, so multi-line Markdown is the default and needs no configuration. To use a different file — or any file with `DELIVERY=channel` — point at it:
 
 ```dotenv
 MESSAGE_TEMPLATE_FILE=templates/welcome.md

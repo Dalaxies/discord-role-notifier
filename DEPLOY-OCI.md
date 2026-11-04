@@ -224,12 +224,13 @@ DELIVERY=dm
 
 `DELIVERY=dm` is the default: the bot sends a direct message to the member. For channel delivery use `DELIVERY=channel` and set `CHANNEL_ID`; `DELIVERY=both` does both.
 
-To use the bundled multi-line welcome message, add:
+With `DELIVERY=dm`, the message is already `templates/welcome.md` — no configuration needed. A details embed follows it by default; to send the text on its own, add:
 
 ```dotenv
-MESSAGE_TEMPLATE_FILE=templates/welcome.md
 EMBED_ENABLED=false
 ```
+
+To use a different file (or any file with `DELIVERY=channel`), also set `MESSAGE_TEMPLATE_FILE=path/to/message.md`.
 
 Save with `Ctrl+O`, `Enter`, then exit with `Ctrl+X`, and start it:
 
@@ -260,7 +261,7 @@ Expected output:
 
 ```
 ... INFO  Logged in as Role Notifier#1234 (123456789012345678)
-... INFO  Watching server "Your Server" (1499114258007588914) for role 1555000310441713664
+... INFO  Watching server "Your Server" (1499114258007588914) for role 1555015410112270458
 ... INFO  Role "Verified" resolved.
 ... INFO  Notifications will be sent as direct messages to the member.
 ... INFO  Members must share this server and allow "Direct messages from server members".

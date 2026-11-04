@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 const SNOWFLAKE_RE = /^\d{17,20}$/;
 
 const DEFAULT_GUILD_ID = '1499114258007588914';
-const DEFAULT_ROLE_ID = '1555000310441713664';
+const DEFAULT_ROLE_ID = '1555015410112270458';
+const DEFAULT_TEMPLATE_FILE = 'templates/welcome.md';
 const DEFAULT_DM_TEMPLATE = 'You were assigned the **{role}** role in **{server}**.';
 const DEFAULT_CHANNEL_TEMPLATE = '👋 {user} was assigned the **{role}** role.';
 const DEFAULT_EMBED_COLOR = 0x57f287;
@@ -98,7 +99,21 @@ export function loadConfig() {
   const embedEnabled = parseBoolean(errors, 'EMBED_ENABLED', true);
 
   // Message precedence: MESSAGE_TEMPLATE_FILE > MESSAGE_TEMPLATE > built-in default.
-  const templateFile = envText('MESSAGE_TEMPLATE_FILE') ?? '';
+  // For DM delivery the bundled templates/welcome.md is the default, so a fresh
+  // install sends the full welcome message with no configuration. Channel
+  // delivery keeps its short built-in line unless a file is named explicitly.
+  const configuredFile = envText('MESSAGE_TEMPLATE_FILE') ?? '';
+  const rawTemplate = process.env.MESSAGE_TEMPLATE;
+
+  // An explicit MESSAGE_TEMPLATE (including an empty one, which means "embed
+  // only") opts out of the bundled file, matching the documented precedence.
+  const templateFile =
+    configuredFile !== ''
+      ? configuredFile
+      : rawTemplate !== undefined || delivery === 'channel'
+        ? ''
+        : DEFAULT_TEMPLATE_FILE;
+
   let fileTemplate;
 
   if (templateFile) {
@@ -106,11 +121,14 @@ export function loadConfig() {
     try {
       fileTemplate = readFileSync(absolute, 'utf8').replace(/^\uFEFF/, '');
     } catch (error) {
-      errors.push(`MESSAGE_TEMPLATE_FILE could not be read (${absolute}): ${error.message}`);
+      // A missing file that was named explicitly is a configuration mistake;
+      // a missing bundled default just means fall back to the built-in text.
+      if (configuredFile !== '') {
+        errors.push(`MESSAGE_TEMPLATE_FILE could not be read (${absolute}): ${error.message}`);
+      }
     }
   }
 
-  const rawTemplate = process.env.MESSAGE_TEMPLATE;
   const defaultTemplate = delivery === 'dm' ? DEFAULT_DM_TEMPLATE : DEFAULT_CHANNEL_TEMPLATE;
 
   let messageTemplate;
@@ -179,7 +197,7 @@ export function loadConfig() {
     channelId,
     delivery,
     messageTemplate,
-    messageTemplateFile: templateFile || null,
+    messageTemplateFile: fileTemplate === undefined ? null : templateFile,
     embedEnabled,
     embedTitle,
     embedColor: parseColor(errors, 'EMBED_COLOR', DEFAULT_EMBED_COLOR),
