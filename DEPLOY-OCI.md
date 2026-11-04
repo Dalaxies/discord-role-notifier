@@ -378,12 +378,24 @@ sudo bash deploy/setup-caddy.sh 140-238-1-2.sslip.io
 
 The script installs Caddy, writes a `Caddyfile` that proxies to `127.0.0.1:3000`, opens 80/443 in `firewalld`, handles SELinux, and starts the unit. Pass a bare IP and it derives the `sslip.io` name for you.
 
-**4. Check it:**
+**4. Check it.** From Windows:
+
+```powershell
+curl.exe -sS -I https://140-238-1-2.sslip.io | Select-Object -First 1
+```
+
+From the server:
 
 ```bash
-curl -sI https://140-238-1-2.sslip.io | head -n 1     # HTTP/2 200
+curl -sSI https://140-238-1-2.sslip.io | head -n 1     # HTTP/2 200
 sudo journalctl -u caddy -n 30 --no-pager             # certificate issued
 ```
+
+Three things to get right in that command, because each one turns a failure into silence:
+
+- **`curl.exe`, not `curl`.** In Windows PowerShell `curl` is an alias for `Invoke-WebRequest`, which takes different arguments.
+- **`head` does not exist in PowerShell.** Use `Select-Object -First 1`.
+- **`-s` hides the error.** `-sS` stays quiet on success but still prints the reason on failure.
 
 First issuance takes a few seconds; if it fails, the journal names the reason (usually DNS, or port 80 blocked).
 
@@ -744,6 +756,9 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | Symptom | Fix |
 | --- | --- |
 | Certificate never issues | DNS must resolve to this box *before* Caddy starts. `getent hosts <name>`, and `dig +short <name>`. Fix DNS, then `sudo systemctl reload caddy`. |
+| `curl` prints nothing at all | `-s` swallowed the error. Re-run as `curl.exe -sS -I https://<host>`, then read the exit code: `6` = DNS, `7` = connection refused (ingress or firewalld), `28` = timeout, `35` = TLS/certificate. |
+| `curl: (6) Could not resolve host` | The name is wrong, or DNS has not propagated. If the host came from `sslip.io`, check the dashes match the IP exactly. |
+| `curl: (7) Failed to connect` | The ingress rule is missing or unsaved, `firewalld` has no `https` service, or nothing is listening on 443 yet. |
 | `curl https://…` times out | Ports 80/443 are not open in the OCI security list, or `firewall-cmd --list-all` lacks `http`/`https`. |
 | `502 Bad Gateway` from Caddy | The bot is not listening on `127.0.0.1:3000`: check `WEB_ENABLED=true` and `systemctl status discord-role-notifier`. |
 | `502` but the bot is up | SELinux blocking the proxy: `sudo ausearch -m avc -ts recent`, then `sudo setsebool -P httpd_can_network_connect on`. |
