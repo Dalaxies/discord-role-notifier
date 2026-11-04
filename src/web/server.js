@@ -13,6 +13,20 @@ const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../web');
 const MESSAGE_LIMIT = 2000;
 const MAX_BODY_BYTES = 64 * 1024;
 
+// Sign-in endpoints are the only unauthenticated, state-changing surface, so
+// they are rate limited per client address. 20 boots per minute is far above
+// normal use and well below anything that could exhaust the OAuth client.
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMITS = new Map([
+  ['/auth/login', 20],
+  ['/auth/callback', 20],
+]);
+const RATE_LIMIT_MAX_ENTRIES = 4096;
+const rateLimitHits = new Map();
+
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
 const STATIC_FILES = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/index.html', ['index.html', 'text/html; charset=utf-8']],
@@ -28,7 +42,7 @@ class HttpError extends Error {
   }
 }
 
-function securityHeaders(res) {
+function securityHeaders(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -45,6 +59,57 @@ function securityHeaders(res) {
       "frame-ancestors 'none'",
     ].join('; '),
   );
+
+  // Only meaningful over TLS, and harmless otherwise. No includeSubDomains:
+  // the host may be a shared suffix such as *.sslip.io.
+  if (req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  }
+}
+
+/**
+ * Client address used for rate limiting. X-Forwarded-For is only honoured when
+ * the request actually came from a loopback reverse proxy, so a remote client
+ * cannot spoof its way out of the limit.
+ */
+function clientIp(req) {
+  const remote = req.socket.remoteAddress ?? 'unknown';
+  if (!LOOPBACK_ADDRESSES.has(remote)) return remote;
+
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded !== 'string') return remote;
+
+  const first = forwarded.split(',')[0]?.trim();
+  return first === undefined || first === '' ? remote : first;
+}
+
+/** Throws 429 once a client exceeds the budget for an endpoint. */
+function rateLimit(req, bucket) {
+  const limit = RATE_LIMITS.get(bucket);
+  if (limit === undefined) return;
+
+  const now = Date.now();
+
+  if (rateLimitHits.size >= RATE_LIMIT_MAX_ENTRIES) {
+    for (const [key, entry] of rateLimitHits) {
+      if (entry.resetAt <= now) rateLimitHits.delete(key);
+    }
+  }
+
+  const key = `${bucket}|${clientIp(req)}`;
+  const entry = rateLimitHits.get(key);
+
+  if (entry === undefined || entry.resetAt <= now) {
+    rateLimitHits.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return;
+  }
+
+  entry.count += 1;
+
+  if (entry.count > limit) {
+    logger.warn(`Rate limited ${bucket} for ${clientIp(req)}.`);
+    throw new HttpError(429, 'Too many sign-in attempts. Wait a minute and try again.');
+  }
 }
 
 function sendJson(res, status, body) {
@@ -400,14 +465,20 @@ async function handleApi(req, res, options, url, path) {
 }
 
 async function route(req, res, options) {
-  securityHeaders(res);
+  securityHeaders(req, res);
 
   const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
   const path = url.pathname;
 
   if (req.method === 'GET' && STATIC_FILES.has(path)) return serveStatic(res, path);
-  if (req.method === 'GET' && path === '/auth/login') return handleLogin(req, res, options);
-  if (req.method === 'GET' && path === '/auth/callback') return handleCallback(req, res, options, url);
+  if (req.method === 'GET' && path === '/auth/login') {
+    rateLimit(req, '/auth/login');
+    return handleLogin(req, res, options);
+  }
+  if (req.method === 'GET' && path === '/auth/callback') {
+    rateLimit(req, '/auth/callback');
+    return handleCallback(req, res, options, url);
+  }
   if (req.method === 'POST' && path === '/auth/logout') return handleLogout(req, res, options);
   if (path.startsWith('/api/')) return handleApi(req, res, options, url, path);
 
@@ -432,7 +503,19 @@ export function createWebServer(options) {
 
 /** Starts the dashboard. Returns the listening http.Server. */
 export async function startWebServer(options) {
-  const { host, port } = options.config.web;
+  const { host, port, redirectUri } = options.config.web;
+  const loginConfigured = auth.isLoginConfigured(options.config.web);
+  const localOnly = LOOPBACK_HOSTS.has(host);
+
+  // An internet-facing dashboard with no login is both useless (every API call
+  // requires a session) and a needless liability.
+  if (!localOnly && !loginConfigured) {
+    throw new Error(
+      `WEB_HOST is "${host}", which is reachable from the network, but DISCORD_CLIENT_SECRET is empty so nobody could sign in. ` +
+        'Set the client secret first, or set WEB_HOST=127.0.0.1 and use an SSH tunnel.',
+    );
+  }
+
   const server = createWebServer(options);
 
   await new Promise((resolvePromise, reject) => {
@@ -445,14 +528,21 @@ export async function startWebServer(options) {
 
   logger.info(`Dashboard listening on http://${host}:${port}`);
 
-  if (!auth.isLoginConfigured(options.config.web)) {
+  if (!loginConfigured) {
     logger.warn(
       'Dashboard login is disabled: set DISCORD_CLIENT_SECRET in .env (Developer Portal -> OAuth2 -> Client Secret).',
     );
   }
 
-  if (host === '127.0.0.1' || host === 'localhost') {
+  if (localOnly) {
     logger.info('Dashboard is local-only. Reach it with: ssh -L 3000:localhost:3000 <user>@<server>');
+  } else if (redirectUri.startsWith('https://')) {
+    logger.info(`Dashboard is public at ${redirectUri.replace(/\/auth\/callback\/?$/, '')}`);
+    logger.info('TLS and rate limiting are expected in front of it: see "Publishing over HTTPS" in DEPLOY-OCI.md.');
+  } else {
+    logger.warn(
+      `Dashboard is reachable from the network but OAUTH_REDIRECT_URI is ${redirectUri}. Discord requires HTTPS for a non-localhost redirect, so sign-in will fail.`,
+    );
   }
 
   return server;

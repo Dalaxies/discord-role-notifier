@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 const DISCORD_API = 'https://discord.com/api/v10';
 const MANAGE_GUILD = 0x20n;
 const STATE_TTL_MS = 10 * 60 * 1000;
+const MAX_PENDING_STATES = 2048;
 const SESSION_COOKIE = 'ascend_session';
 const STATE_COOKIE = 'ascend_oauth_state';
 
@@ -27,6 +28,13 @@ function pruneStates() {
  */
 export function createLogin(web, clientId) {
   pruneStates();
+
+  // Bound the map so an unauthenticated flood of /auth/login cannot grow it
+  // without limit. Insertion order is expiry order, so the first key is oldest.
+  if (pendingStates.size >= MAX_PENDING_STATES) {
+    const oldest = pendingStates.keys().next().value;
+    if (oldest !== undefined) pendingStates.delete(oldest);
+  }
 
   const state = randomBytes(24).toString('hex');
   pendingStates.set(state, Date.now() + STATE_TTL_MS);

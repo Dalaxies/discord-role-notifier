@@ -260,13 +260,25 @@ ssh -i ~/.ssh/oci_discord_bot -L 3000:localhost:3000 opc@<public-ip>
 
 Then open `http://localhost:3000` on your own machine; the tunnel carries it to the server's loopback.
 
-For a permanent public URL, put nginx/Caddy with HTTPS in front, set `OAUTH_REDIRECT_URI` to that URL (and register it in the portal), and set `WEB_COOKIE_SECURE=true`. Keep `WEB_HOST=127.0.0.1`.
+### Public HTTPS (optional)
+
+To reach it from anywhere — including a phone — `deploy/setup-caddy.sh` puts Caddy in front with an automatic Let's Encrypt certificate:
+
+```bash
+sudo bash deploy/setup-caddy.sh 140.238.1.2
+```
+
+A bare IP is converted to a free `140-238-1-2.sslip.io` name, so no domain is needed. Then set `OAUTH_REDIRECT_URI=https://<host>/auth/callback` (and register the same URI in the portal), `WEB_COOKIE_SECURE=true`, and allow TCP 80/443 in the OCI security list. Keep `WEB_HOST=127.0.0.1`: only Caddy is exposed.
+
+Discord requires HTTPS for a non-localhost redirect URI, so a certificate is a prerequisite, not a nicety. Full walkthrough in [DEPLOY-OCI.md](DEPLOY-OCI.md#publishing-the-dashboard-over-https).
 
 ### Security
 
 - Scopes are `identify` and `guilds` only; the OAuth access token is never exposed to the page.
 - The login callback uses a state value bound to an HttpOnly cookie; all changes require a per-session CSRF token and a same-origin request.
 - Only the owner, members with Manage Server, or IDs in `WEB_ADMIN_IDS` can sign in.
+- `/auth/login` and `/auth/callback` are rate limited per client address (20/min), so a public deployment cannot be hammered into exhausting the OAuth client.
+- The bot refuses to bind to a non-loopback host at all when no client secret is configured.
 - All edits are validated server-side and written to the activity log with the username.
 
 ---
@@ -325,6 +337,7 @@ sudo journalctl -u discord-role-notifier -f
 │   └── settings.json                    # created by the dashboard (gitignored)
 ├── deploy/
 │   ├── install.sh                     # Oracle Linux installer
+│   ├── setup-caddy.sh                 # optional: publish the dashboard over HTTPS
 │   ├── discord-role-notifier.service  # systemd unit
 │   ├── discord-role-notifier-backup.service   # nightly backup unit
 │   ├── discord-role-notifier-backup.timer     # nightly backup schedule
@@ -376,6 +389,6 @@ sudo journalctl -u discord-role-notifier -f
 - Treat `DISCORD_TOKEN` like a password. It is excluded via `.gitignore`; on the server `install.sh` sets `.env` to mode `600`.
 - If the token leaks, click **Reset Token** in the Developer Portal and update `.env`.
 - Keep the bot's permissions minimal (View Audit Log, plus channel permissions only if you use channel delivery).
-- The dashboard adds no public port when left on `127.0.0.1`; reach it through an SSH tunnel. If you expose it publicly, put HTTPS in front and set `WEB_COOKIE_SECURE=true`.
+- The dashboard adds no public port when left on `127.0.0.1`; reach it through an SSH tunnel. To expose it, run `deploy/setup-caddy.sh` (HTTPS via Caddy) and set `WEB_COOKIE_SECURE=true`.
 - Dashboard sessions are in memory and expire after `SESSION_TTL_HOURS` (default 12). The bot token and OAuth access tokens are never stored in the browser.
 - For OCI, restrict SSH ingress to your own IP address and keep the OS patched — see the deployment guide.

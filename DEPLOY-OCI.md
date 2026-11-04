@@ -308,6 +308,74 @@ Because the tunnel ends on the server's loopback interface, you do **not** need 
 
 > Sessions live in memory, so restarting the service signs everyone out. The bot token is never sent to the browser.
 
+#### Publishing the dashboard over HTTPS
+
+The tunnel needs an SSH client every time, which rules out a phone. To make the dashboard reachable from anywhere, put Caddy in front of it: Caddy gets a free Let's Encrypt certificate and proxies to the bot, which keeps listening on `127.0.0.1`.
+
+**You need a hostname.** Discord rejects a plain-HTTP redirect URI for anything other than `localhost`, so TLS is not optional. If you do not own a domain, `sslip.io` maps any IP to a name for free: `140.238.1.2` becomes `140-238-1-2.sslip.io` (or `140.238.1.2.sslip.io`). The name is derived from the address, so it changes only if the instance's public IP does — which makes a **reserved** public IP worth attaching.
+
+Verify the name resolves before touching the server:
+
+```bash
+getent hosts 140-238-1-2.sslip.io
+```
+
+If that prints nothing, stop here: certificate issuance cannot succeed.
+
+**1. Allow the ports in OCI.** Console → **Networking → Virtual Cloud Networks** → your VCN → the public subnet → **Security Lists** → default list → **Add Ingress Rules**:
+
+| Stateless | Source | IP protocol | Destination port |
+| --- | --- | --- | --- |
+| No | `0.0.0.0/0` | TCP | `80` |
+| No | `0.0.0.0/0` | TCP | `443` |
+
+Port 80 is only used for the ACME challenge and the redirect to HTTPS; Caddy never serves content over it.
+
+**2. Point the bot at its public URL.** In `/opt/discord-role-notifier/.env`:
+
+```dotenv
+WEB_ENABLED=true
+WEB_HOST=127.0.0.1
+OAUTH_REDIRECT_URI=https://140-238-1-2.sslip.io/auth/callback
+WEB_COOKIE_SECURE=true
+```
+
+Keep `WEB_HOST=127.0.0.1`. Caddy is on the same box, so the bot never needs to accept a connection from the network — only Caddy does.
+
+Add the same redirect URI in **Developer Portal → your app → OAuth2 → Redirects** and restart:
+
+```bash
+sudo systemctl restart discord-role-notifier
+```
+
+**3. Install Caddy:**
+
+```bash
+cd ~/discord-role-notifier
+sudo bash deploy/setup-caddy.sh 140-238-1-2.sslip.io
+```
+
+The script installs Caddy, writes a `Caddyfile` that proxies to `127.0.0.1:3000`, opens 80/443 in `firewalld`, handles SELinux, and starts the unit. Pass a bare IP and it derives the `sslip.io` name for you.
+
+**4. Check it:**
+
+```bash
+curl -sI https://140-238-1-2.sslip.io | head -n 1     # HTTP/2 200
+sudo journalctl -u caddy -n 30 --no-pager             # certificate issued
+```
+
+First issuance takes a few seconds; if it fails, the journal names the reason (usually DNS, or port 80 blocked).
+
+**What this exposes.** Ports 80 and 443 answer from the whole internet, but everything behind them still requires a Discord login with **Manage Server** on your guild. The bot adds the pieces that matter for a public listener:
+
+- `/auth/login` and `/auth/callback` are rate limited to 20 requests per minute per client address (using `X-Forwarded-For`, but only when the request arrives from the local proxy, so it cannot be spoofed)
+- `Strict-Transport-Security` is sent when the request came over HTTPS
+- the bot refuses to bind to a non-loopback `WEB_HOST` at all if `DISCORD_CLIENT_SECRET` is empty
+
+`WEB_ADMIN_IDS` *adds* users to the `Manage Server` check (useful for a co-admin without the permission); it cannot restrict access to fewer people. Keeping the guild's admin list short is the practical control.
+
+To undo it: `sudo systemctl disable --now caddy`, delete the two ingress rules, and set `OAUTH_REDIRECT_URI` back to `http://localhost:3000/auth/callback`. The SSH tunnel keeps working the whole time, so you can never lock yourself out.
+
 ---
 
 ## 8. Test end to end
@@ -594,10 +662,11 @@ Notes:
 
 - [ ] `.env` is mode `600` and owned by `discordbot` (`sudo ls -l /opt/discord-role-notifier/.env`)
 - [ ] Security list SSH ingress restricted to your IP where practical
-- [ ] No inbound application ports open
+- [ ] No inbound application ports open — **or**, if you published the dashboard: only 80 and 443, Caddy in front, `WEB_HOST=127.0.0.1`, `WEB_COOKIE_SECURE=true`
+- [ ] `sudo ss -ltnp | grep 3000` shows `127.0.0.1:3000`, never `0.0.0.0:3000`
 - [ ] OS patched (`sudo dnf upgrade -y` monthly; reboot when the kernel updates)
 - [ ] Bot permissions minimal; token never committed
-- [ ] Dashboard left on `127.0.0.1` and reached through an SSH tunnel (no public port), or behind HTTPS with `WEB_COOKIE_SECURE=true`
+- [ ] Dashboard reached through an SSH tunnel, or behind HTTPS with a login configured (never both `0.0.0.0` and an empty `DISCORD_CLIENT_SECRET`)
 - [ ] Budget alert configured if you upgrade to Pay As You Go
 - [ ] Token rotated immediately if it is ever exposed
 - [ ] Backup timer active (`systemctl list-timers discord-role-notifier-backup`) and, if used, the Object Storage PAR is current
@@ -648,6 +717,19 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | `Permission denied` on `git pull` | Same cause: the working tree belongs to `discordbot`. Pull in the home-directory clone instead. |
 | Dashboard edits reverted after `git pull` | Expected — the installer re-extracts `templates/` from the repo. Commit the change in the repo, or copy the text back from the dashboard log. |
 | `git pull` reports local changes it will not overwrite | The clone should never be edited on the server. `git stash` or `git checkout -- .`, then pull. |
+
+### Public HTTPS (Caddy)
+
+| Symptom | Fix |
+| --- | --- |
+| Certificate never issues | DNS must resolve to this box *before* Caddy starts. `getent hosts <name>`, and `dig +short <name>`. Fix DNS, then `sudo systemctl reload caddy`. |
+| `curl https://…` times out | Ports 80/443 are not open in the OCI security list, or `firewall-cmd --list-all` lacks `http`/`https`. |
+| `502 Bad Gateway` from Caddy | The bot is not listening on `127.0.0.1:3000`: check `WEB_ENABLED=true` and `systemctl status discord-role-notifier`. |
+| `502` but the bot is up | SELinux blocking the proxy: `sudo ausearch -m avc -ts recent`, then `sudo setsebool -P httpd_can_network_connect on`. |
+| Login loops back with `?error=state` | Cookies are not coming back. You are on `http://` or a different hostname than `OAUTH_REDIRECT_URI`, or `WEB_COOKIE_SECURE=true` while browsing plain HTTP. |
+| `?error=login_failed` | The redirect URI in the Developer Portal does not match `OAUTH_REDIRECT_URI` character for character, including `https` and the trailing path. |
+| Still reachable on port 3000 from outside | It should not be. `sudo ss -ltnp \| grep 3000` must show `127.0.0.1:3000`, never `0.0.0.0:3000`. |
+| `429 Too many sign-in attempts` | The rate limiter, working as intended. Wait a minute. It keys on `X-Forwarded-For` from the local proxy, so each visitor gets their own budget. |
 
 ### Web dashboard
 
