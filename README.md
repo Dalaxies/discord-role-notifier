@@ -277,17 +277,17 @@ Follow [DEPLOY-OCI.md](DEPLOY-OCI.md). It covers:
 
 - creating the free-tier VM and network
 - SSH from Windows
-- uploading the project
+- cloning this repository on the server
 - the included one-command installer (`deploy/install.sh`) that sets up Node.js, a dedicated service user, a hardened systemd service, and a nightly backup of `.env`, `templates/` and `data/`
-- updates, logs, restoring a backup, and free-tier gotchas
+- updating with `git pull`, logs, restoring a backup, and billing guardrails
 
-On the server, after uploading the project:
+On the server, after cloning the project:
 
 ```bash
-cd /opt/discord-role-notifier
-sudo cp .env.example .env
-sudo nano .env          # token, DELIVERY, and CHANNEL_ID if needed
-sudo bash deploy/install.sh
+cd ~/discord-role-notifier
+sudo bash deploy/install.sh      # creates /opt/discord-role-notifier and a .env
+sudo nano /opt/discord-role-notifier/.env   # token, DELIVERY, and CHANNEL_ID if needed
+sudo systemctl enable --now discord-role-notifier
 sudo journalctl -u discord-role-notifier -f
 ```
 

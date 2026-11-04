@@ -73,8 +73,9 @@ This gives you a public subnet with an internet gateway and a route to the inter
    - Use the "Always Free eligible" filter to be safe.
 5. **Shape:**
    - Click **Change shape** → **Ampere** → `VM.Standard.A1.Flex`.
-   - OCPUs: `1`, Memory: `6 GB` (well within the 4 OCPU / 24 GB allowance).
-   - Fallback: **AMD** → `VM.Standard.E2.1.Micro` (1/8 OCPU, 1 GB).
+   - OCPUs: `2`, Memory: `12 GB`.
+   - That is the whole Always Free A1 allowance (1,500 OCPU-hours and 9,000 GB-hours per month), so it must be the **only** A1 instance in the tenancy. Anything smaller is also fine; 1 OCPU / 6 GB is the leaner choice and leaves room for a second instance.
+   - Fallback: **AMD** → `VM.Standard.E2.1.Micro` (1/8 OCPU, 1 GB). Expect a full `dnf update` to be painful there — add 2 GB of swap first.
 6. **Boot volume:** check **Specify a custom boot volume size** and set **50 GB**. Leave the rest at defaults. (Default is ~47 GB; 50 GB is a round number and fits the 200 GB allowance.)
 7. **SSH keys:** choose **Generate a key pair for me** and download the private key, *or* paste an existing public key (recommended if you already use `~/.ssh`).
 8. **Networking:** accept the VCN/subnet from step 3. **Assign a public IPv4 address: Yes**.
@@ -177,41 +178,41 @@ The bot only makes **outbound** connections to Discord on TCP 443. Do **not** op
 
 ---
 
-## 6. Upload the project
+## 6. Clone the project
 
-Run these on **your Windows machine**, in the project directory. `tar` on Windows 10/11 is bsdtar and supports `--exclude`.
-
-```powershell
-tar -czf bot.tgz --exclude=node_modules --exclude=.env --exclude=.git .
-scp bot.tgz opc@<PUBLIC_IP>:/tmp/bot.tgz
-```
-
-If `--exclude` is not recognised, use Git Bash/WSL or create the archive with:
-
-```powershell
-Compress-Archive -Path src,deploy,package.json,package-lock.json,.env.example,README.md,DEPLOY-OCI.md -DestinationPath bot.zip
-scp bot.zip opc@<PUBLIC_IP>:/tmp/bot.zip
-```
-
-Then unpack on the server (adjust for `.zip` if needed):
+The source lives at <https://github.com/Dalaxies/discord-role-notifier>, so the server pulls it directly. Nothing is copied from your PC.
 
 ```bash
-sudo mkdir -p /opt/discord-role-notifier
-sudo tar -xzf /tmp/bot.tgz -C /opt/discord-role-notifier
-cd /opt/discord-role-notifier
+sudo dnf install -y git
+git clone https://github.com/Dalaxies/discord-role-notifier.git ~/discord-role-notifier
+cd ~/discord-role-notifier
 ls
 ```
 
-You should see `src`, `deploy`, `package.json`, `.env.example`, etc.
+You should see `src`, `deploy`, `package.json`, `.env.example`, etc. The repository is public, so there is no key to add and no credential prompt.
+
+**Keep the clone in your home directory.** The installer copies it to `/opt/discord-role-notifier` as a runtime tree owned by the `discordbot` service user, and that split is deliberate:
+
+- `git pull` runs as `opc` with no `sudo` and no ownership complaints.
+- `/opt` stays a clean runtime tree: the copy excludes `.git`, `node_modules` and `.env`.
+
+> Do not clone straight into `/opt/discord-role-notifier`. The installer `chown`s that directory to `discordbot`, after which git refuses to operate on it ("detected dubious ownership"), and the fix is an explicit `safe.directory` exception that is easy to forget on the next rebuild.
 
 ---
 
 ## 7. Configure and install
 
+Run the installer from the clone:
+
 ```bash
-cd /opt/discord-role-notifier
-sudo cp .env.example .env
-sudo nano .env
+cd ~/discord-role-notifier
+sudo bash deploy/install.sh
+```
+
+It creates `/opt/discord-role-notifier`, copies the app in, and — on a first run — writes a `.env` from `.env.example`. It will stop short of starting the bot because there is no token yet. Fill the file in:
+
+```bash
+sudo nano /opt/discord-role-notifier/.env
 ```
 
 Set at least:
@@ -230,13 +231,13 @@ MESSAGE_TEMPLATE_FILE=templates/welcome.md
 EMBED_ENABLED=false
 ```
 
-Save with `Ctrl+O`, `Enter`, then exit with `Ctrl+X`.
-
-Now run the installer:
+Save with `Ctrl+O`, `Enter`, then exit with `Ctrl+X`, and start it:
 
 ```bash
-sudo bash deploy/install.sh
+sudo systemctl enable --now discord-role-notifier
 ```
+
+From then on, every `deploy/install.sh` run restarts the service automatically because the token is present.
 
 The installer:
 
@@ -434,7 +435,7 @@ sudo systemctl start discord-role-notifier
 sudo systemctl status discord-role-notifier --no-pager
 ```
 
-If the instance itself is gone, create a new one (sections 3–5), upload the project (section 6), run the installer (section 7), and only then restore the archive and restart:
+If the instance itself is gone, create a new one (sections 3–5), clone the project (section 6), run the installer (section 7), and only then restore the archive and restart:
 
 ```bash
 sudo tar -xzf discord-role-notifier-<stamp>.tar.gz -C /opt/discord-role-notifier
@@ -511,27 +512,53 @@ Billing → **Cost Analysis** should stay at $0 if you stay within the allowance
 
 ## 11. Updating the bot
 
-On Windows, rebuild and upload the archive (never include `.env`):
+Commit and push from your Windows machine:
 
 ```powershell
-tar -czf bot.tgz --exclude=node_modules --exclude=.env --exclude=.git .
-scp bot.tgz opc@<PUBLIC_IP>:/tmp/bot.tgz
+git add -A
+git commit -m "Describe the change"
+git push
 ```
 
-On the server:
+Then on the server:
 
 ```bash
-sudo tar -xzf /tmp/bot.tgz -C /opt/discord-role-notifier
-sudo bash /opt/discord-role-notifier/deploy/install.sh
+cd ~/discord-role-notifier
+git pull
+sudo bash deploy/install.sh
 ```
 
-`install.sh` preserves the existing `.env`, reinstalls dependencies and restarts the service (because a token is present). It also re-applies ownership and permissions and reinstalls the backup timer.
+`install.sh` copies the new tree into `/opt/discord-role-notifier`, preserves the existing `.env`, reinstalls dependencies and restarts the service (because a token is present). It also re-applies ownership and permissions and reinstalls the backup timer.
 
-If you change `package.json` dependencies, this is enough — `npm install --omit=dev` resolves them. If you add/remove files, note that extraction does not delete stale files; for this small project that is harmless.
+Two things to know about that copy step:
+
+- **It reconciles rather than overwrites.** Every top-level entry except `.env` is deleted from `/opt` and re-extracted from the clone, so files you deleted from the repo disappear on the server too.
+- **Dashboard edits do not survive an update.** If you changed the welcome message in the browser, that edit lives only in `/opt/.../templates/welcome.md` and is replaced by the repo version. Edit `templates/welcome.md` in the repo and push it instead — the dashboard is for quick tweaks, and every save is logged so you can copy the text back out. The same applies to `data/settings.json`.
+
+If you change dependencies in `package.json`, `git pull` plus the installer is enough — `npm install --omit=dev` resolves them.
+
+Useful extras:
+
+```bash
+git log --oneline -5      # what changed since the last pull
+git diff HEAD@{1} --stat  # files touched by the last pull
+```
 
 ### Rolling back
 
-Keep the previous `bot.tgz` (or use Git tags). To roll back, upload the old archive and run the installer again.
+```bash
+git log --oneline         # find the commit to return to
+git checkout <commit>     # detached HEAD: fine for a rollback
+sudo bash deploy/install.sh
+git checkout main         # when you want to move forward again
+```
+
+Or revert properly and push, so the rollback is itself in the history:
+
+```powershell
+git revert <commit>
+git push
+```
 
 ---
 
@@ -612,6 +639,16 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | Works manually, not as a service | Environment differs: systemd does not load your shell profile. Everything must come from `.env`. |
 | Permission denied reading files | `sudo chown -R discordbot:discordbot /opt/discord-role-notifier` and `sudo chmod 700 /opt/discord-role-notifier`. |
 
+### Git and updates
+
+| Symptom | Fix |
+| --- | --- |
+| `git: command not found` | `sudo dnf install -y git`. |
+| `detected dubious ownership in repository` | You are running git on a tree the installer chowned to `discordbot`. Clone to `~/discord-role-notifier` and let `/opt` be a copy (section 6). If you must keep a repo in `/opt`, add `git config --global --add safe.directory /opt/discord-role-notifier`. |
+| `Permission denied` on `git pull` | Same cause: the working tree belongs to `discordbot`. Pull in the home-directory clone instead. |
+| Dashboard edits reverted after `git pull` | Expected — the installer re-extracts `templates/` from the repo. Commit the change in the repo, or copy the text back from the dashboard log. |
+| `git pull` reports local changes it will not overwrite | The clone should never be edited on the server. `git stash` or `git checkout -- .`, then pull. |
+
 ### Web dashboard
 
 | Symptom | Fix |
@@ -662,10 +699,11 @@ If you ever need to recreate it:
 
 ```text
 1. VCN with internet connectivity (public subnet)
-2. Oracle Linux 9, A1.Flex 1 OCPU / 6 GB (or E2.1.Micro), 50 GB boot, public IPv4, SSH key
+2. Oracle Linux 9, A1.Flex 2 OCPU / 12 GB, 50 GB boot, public IPv4, SSH key
 3. ssh opc@IP
-4. upload archive -> /opt/discord-role-notifier
-5. cp .env.example .env; edit token + delivery (and channel ID if channel mode)
-6. sudo bash deploy/install.sh
-7. sudo journalctl -u discord-role-notifier -f
+4. git clone https://github.com/Dalaxies/discord-role-notifier.git ~/discord-role-notifier
+5. cd ~/discord-role-notifier && sudo bash deploy/install.sh
+6. edit /opt/discord-role-notifier/.env (token, delivery, channel ID if needed)
+7. sudo systemctl enable --now discord-role-notifier
+8. sudo journalctl -u discord-role-notifier -f
 ```
