@@ -25,6 +25,22 @@ fi
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Dashboard-managed files live in templates/ and data/. By default they are
+# carried across an upgrade, so editing the welcome message in the browser is
+# not undone by the next `git pull` + install. --reset opts back in to taking
+# the repository versions.
+RESET_STATE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --reset|--reset-state) RESET_STATE=1 ;;
+    *)
+      echo "Unknown argument: ${arg}" >&2
+      echo "Usage: sudo bash deploy/install.sh [--reset]" >&2
+      exit 1
+      ;;
+  esac
+done
+
 echo "==> Checking Node.js"
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]]; then
   echo "    Installing Node.js ${NODE_MAJOR}.x from NodeSource"
@@ -52,6 +68,18 @@ if [[ "${SOURCE_DIR}" != "${APP_DIR}" ]]; then
     echo "    No existing .env found; one will be created from .env.example"
   fi
 
+  # Snapshot the dashboard-managed trees before the delete below. Restoring
+  # them after the tar extract keeps local edits while still adding any new
+  # files that the repository introduced.
+  STATE_BACKUP=""
+  if [[ ${RESET_STATE} -eq 0 && ( -d "${APP_DIR}/templates" || -d "${APP_DIR}/data" ) ]]; then
+    STATE_BACKUP=$(mktemp -d /tmp/discord-role-notifier-state.XXXXXX)
+    for item in templates data; do
+      [[ -d "${APP_DIR}/${item}" ]] && cp -a "${APP_DIR}/${item}" "${STATE_BACKUP}/"
+    done
+    echo "    Preserving the existing templates/ and data/"
+  fi
+
   find "${APP_DIR}" -mindepth 1 -maxdepth 1 ! -name '.env' -exec rm -rf {} +
   tar -C "${SOURCE_DIR}" \
     --exclude=node_modules \
@@ -59,6 +87,19 @@ if [[ "${SOURCE_DIR}" != "${APP_DIR}" ]]; then
     --exclude=.env \
     --exclude=bot.tgz \
     -cf - . | tar -C "${APP_DIR}" -xf -
+
+  # Copy the snapshot back over the fresh tree. Files added by the repository
+  # are untouched; files the dashboard changed keep the local version.
+  if [[ -n "${STATE_BACKUP}" ]]; then
+    for item in templates data; do
+      if [[ -d "${STATE_BACKUP}/${item}" ]]; then
+        mkdir -p "${APP_DIR}/${item}"
+        cp -a "${STATE_BACKUP}/${item}/." "${APP_DIR}/${item}/"
+      fi
+    done
+    rm -rf "${STATE_BACKUP}"
+    echo "    Restored the local templates/ and data/"
+  fi
 
   if [[ -f /tmp/discord-role-notifier.env.bak ]]; then
     mv /tmp/discord-role-notifier.env.bak "${APP_DIR}/.env"
@@ -119,3 +160,4 @@ echo "  sudo journalctl -u ${SERVICE_NAME} -f"
 echo "  sudo systemctl restart ${SERVICE_NAME}"
 echo "  sudo systemctl list-timers ${SERVICE_NAME}-backup"
 echo "  sudo systemctl start ${SERVICE_NAME}-backup   # back up right now"
+echo "  sudo bash deploy/install.sh --reset           # replace templates/ and data/ with the repo versions"

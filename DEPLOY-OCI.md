@@ -565,7 +565,7 @@ sudo chown -R discordbot:discordbot /opt/discord-role-notifier
 sudo systemctl restart discord-role-notifier
 ```
 
-Restore *after* the installer, not before: when `install.sh` runs from outside `/opt/discord-role-notifier` it re-extracts the project and would overwrite `templates/` and `data/` with the repo copies.
+Restore *after* the installer: the archive then wins over both the repository files and any preserved defaults.
 
 ---
 
@@ -654,8 +654,8 @@ sudo bash deploy/install.sh
 
 Two things to know about that copy step:
 
-- **It reconciles rather than overwrites.** Every top-level entry except `.env` is deleted from `/opt` and re-extracted from the clone, so files you deleted from the repo disappear on the server too.
-- **Dashboard edits do not survive an update.** If you changed the welcome message in the browser, that edit lives only in `/opt/.../templates/welcome.md` and is replaced by the repo version. Edit `templates/welcome.md` in the repo and push it instead - the dashboard is for quick tweaks, and every save is logged so you can copy the text back out. The same applies to `data/settings.json`.
+- **It reconciles rather than overwrites.** Every top-level entry except `.env`, `templates/` and `data/` is deleted from `/opt` and re-extracted from the clone, so files you deleted from the repo disappear on the server too.
+- **Dashboard edits survive an update.** `templates/` and `data/` are snapshotted before the delete and copied back afterwards, so the welcome message and `data/settings.json` keep their local versions. New files added by the repository are still installed. To discard them and take the repository versions, run `sudo bash deploy/install.sh --reset`.
 
 > **`DELIVERY` and `CHANNEL_ID` are retired.** Welcome messages are always DMs now. The old channel copy is replaced by the admin log channel (`LOG_CHANNEL_ID`, default `1499140628817379459`). Remove `DELIVERY` and `CHANNEL_ID` from `.env`; if either is still present the bot logs a warning at startup and ignores it.
 
@@ -774,7 +774,7 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | `git: command not found` | `sudo dnf install -y git`. |
 | `detected dubious ownership in repository` | You are running git on a tree the installer chowned to `discordbot`. Clone to `~/discord-role-notifier` and let `/opt` be a copy (section 6). If you must keep a repo in `/opt`, add `git config --global --add safe.directory /opt/discord-role-notifier`. |
 | `Permission denied` on `git pull` | Same cause: the working tree belongs to `discordbot`. Pull in the home-directory clone instead. |
-| Dashboard edits reverted after `git pull` | Expected — the installer re-extracts `templates/` from the repo. Commit the change in the repo, or copy the text back from the dashboard log. |
+| Dashboard edits reverted after `git pull` | You ran the installer with `--reset`, or with an older version of `install.sh`. Restore `templates/welcome.md` from `/var/backups/discord-role-notifier` (section 9), then update the installer. |
 | `git pull` reports local changes it will not overwrite | The clone should never be edited on the server. `git stash` or `git checkout -- .`, then pull. |
 
 ### Public HTTPS (Caddy)
