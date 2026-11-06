@@ -1,6 +1,6 @@
 # Discord Role Notifier
 
-Sends a **direct message (DM)** to a member whenever they are given a specific role. Every DM is also recorded in a configurable **admin log channel** for auditing.
+Sends a **direct message (DM)** to a member whenever they are given a specific role. Every DM is also recorded as an embed in a configurable **admin log channel** for auditing.
 
 | Setting | Value |
 | --- | --- |
@@ -38,7 +38,7 @@ Discord Gateway  ──(outbound WSS 443)──►  Node.js bot  ──►  Disc
 
 - The bot opens an **outbound** connection to Discord. It needs **no inbound ports, no domain name and no public web server**.
 - It listens for `guildMemberUpdate`, compares the member's roles before/after the event, and reacts only when the watched role was **added**.
-- It then sends the welcome message by DM, and posts a short audit entry to the admin log channel (success or failure).
+- It then sends the welcome message by DM, and posts an embedded audit entry to the admin log channel (success or failure).
 - Optionally it reads the server audit log to show **who** assigned the role.
 - It runs as a single process. Memory use is roughly 80–150 MB.
 
@@ -63,7 +63,7 @@ Or build it manually:
 2. Scopes: `bot`
 3. Bot permissions:
    - View Audit Log (for the "Assigned by" field; skip if `LOOKUP_AUDIT_LOG=false`)
-   - View Channels and Send Messages in the admin log channel
+   - View Channels, Send Messages and Embed Links in the admin log channel
 4. Open the generated URL, pick server `1499114258007588914`, and authorize.
 
 The equivalent permissions integer is `85120`:
@@ -108,7 +108,7 @@ DISCORD_TOKEN=your-bot-token
 | `DISCORD_TOKEN` | — | **Required.** Bot token from the Developer Portal. |
 | `GUILD_ID` | `1499114258007588914` | Server to watch. |
 | `ROLE_ID` | `1555015410112270458` | Role that triggers a notification when added. |
-| `LOG_CHANNEL_ID` | `1499140628817379459` | Channel that receives an audit entry after every DM. Empty disables channel logging. Overridden by the dashboard. |
+| `LOG_CHANNEL_ID` | `1499140628817379459` | Channel that receives an embedded audit entry after every DM. Empty disables channel logging. Overridden by the dashboard. |
 | `MESSAGE_TEMPLATE` | `templates/welcome.md` | Text above the embed. An explicit value here overrides the bundled file. Empty = embed only. |
 | `MESSAGE_TEMPLATE_FILE` | `templates/welcome.md` | Path to a file containing the message (relative to the project directory). Takes precedence over `MESSAGE_TEMPLATE`. Ideal for multi-line messages. |
 | `EMBED_ENABLED` | `true` | Send the details embed after the text. Set `false` to send only your message. |
@@ -186,7 +186,7 @@ Unknown placeholders are left untouched, so a typo shows up as `{typo}` in Disco
    npm start
    ```
 
-5. In Discord, assign the role to a test member. The console should show the event, the member should receive a DM, and the admin log channel should receive an audit entry. Remove the role and assign it again to confirm it fires on each new assignment.
+5. In Discord, assign the role to a test member. The console should show the event, the member should receive a DM, and the admin log channel should receive an embedded audit entry. Remove the role and assign it again to confirm it fires on each new assignment.
 
 `npm run dev` restarts automatically when source files change.
 
@@ -367,8 +367,8 @@ sudo journalctl -u discord-role-notifier -f
 | `Invalid configuration: DISCORD_TOKEN is missing` | `.env` not found or token empty. The bot reads `.env` from the working directory. |
 | Bot online, no messages | Check `ROLE_ID` and `GUILD_ID`. Run `npm run doctor`. |
 | Member never receives a DM | Their **Privacy & Safety → Direct messages from server members** setting is off, or they no longer share the server. The log and admin channel show Discord error `50007`; this cannot be forced. |
-| Admin channel gets no entries | Check `LOG_CHANNEL_ID` (or the dashboard setting), and give the bot View Channel and Send Messages there. Run `npm run doctor`. |
-| `Cannot post in admin log #channel: missing …` | Give the bot View Channel and Send Messages in that channel (channel-level overrides can block it). |
+| Admin channel gets no entries | Check `LOG_CHANNEL_ID` (or the dashboard setting), and give the bot View Channel, Send Messages and Embed Links there. Run `npm run doctor`. |
+| `Cannot post in admin log #channel: missing …` | Give the bot View Channel, Send Messages and Embed Links in that channel (channel-level overrides can block it). |
 | `LOG_CHANNEL_ID … was not found` | Wrong channel ID, or the bot cannot see that channel. Set it again in the dashboard or `.env`. |
 | Message arrives twice | Two copies of the bot are running (e.g. local + server). Stop one. |
 | Message on nickname change | Should not happen — the code compares role sets. If it does, set `LOG_LEVEL=debug` and open an issue with the log. |
@@ -396,7 +396,7 @@ sudo journalctl -u discord-role-notifier -f
 
 - Treat `DISCORD_TOKEN` like a password. It is excluded via `.gitignore`; on the server `install.sh` sets `.env` to mode `600`.
 - If the token leaks, click **Reset Token** in the Developer Portal and update `.env`.
-- Keep the bot's permissions minimal (View Audit Log, plus View Channel and Send Messages in the admin log channel).
+- Keep the bot's permissions minimal (View Audit Log, plus View Channel, Send Messages and Embed Links in the admin log channel).
 - The dashboard adds no public port when left on `127.0.0.1`; reach it through an SSH tunnel. To expose it, run `deploy/setup-caddy.sh` (HTTPS via Caddy) and set `WEB_COOKIE_SECURE=true`.
 - Dashboard sessions are in memory and expire after `SESSION_TTL_HOURS` (default 12). The bot token and OAuth access tokens are never stored in the browser.
 - For OCI, restrict SSH ingress to your own IP address and keep the OS patched — see the deployment guide.

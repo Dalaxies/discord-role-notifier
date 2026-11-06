@@ -50,7 +50,7 @@ async function sendDirectMessage(member, content, embed) {
  * Posts a short audit entry to the configured admin channel. Channel problems
  * are logged but never allowed to affect the DM, which has already been sent.
  */
-async function postAdminLog(guild, config, content) {
+async function postAdminLog(guild, config, embed) {
   if (!config.logChannelId) return;
 
   try {
@@ -63,7 +63,7 @@ async function postAdminLog(guild, config, content) {
     }
 
     await channel.send({
-      content: content.slice(0, 2000),
+      embeds: [embed],
       allowedMentions: { parse: [] },
     });
     logger.info(`Admin log posted in #${channel.name} (${channel.id}).`);
@@ -72,16 +72,27 @@ async function postAdminLog(guild, config, content) {
   }
 }
 
-function describeOutcome(member, roleId, roleName, assignedBy, dm) {
-  const who = `${member.user.username} (${member.id})`;
-  const role = roleName ? `"${roleName}" (<@&${roleId}>)` : `<@&${roleId}>`;
+function buildLogEmbed(member, roleId, roleName, assignedBy, dm) {
+  const name = `${member.user.username} (${member.id})`;
+  const role = roleName ? `**${roleName}** (<@&${roleId}>)` : `<@&${roleId}>`;
   const assigner = assignedBy ? `<@${assignedBy.id}>` : 'Unknown';
 
-  if (dm.ok) {
-    return `\u2705 Welcome DM sent to **${who}** for role ${role}. Assigned by ${assigner}.`;
-  }
-
-  return `\u26a0\ufe0f Welcome DM **failed** for **${who}** (role ${role}): ${dm.reason}. Assigned by ${assigner}.`;
+  return new EmbedBuilder()
+    .setColor(dm.ok ? 0x57f287 : 0xfaa61a)
+    .setAuthor({ name, iconURL: member.displayAvatarURL() })
+    .setTitle(dm.ok ? '\u2705 Welcome DM sent' : '\u26a0\ufe0f Welcome DM failed')
+    .setDescription(
+      dm.ok
+        ? 'The welcome message was delivered.'
+        : `The welcome message could not be delivered: ${dm.reason}.`,
+    )
+    .addFields(
+      { name: 'Member', value: `<@${member.id}>`, inline: true },
+      { name: 'Role', value: role, inline: true },
+      { name: 'Assigned by', value: assigner, inline: true },
+    )
+    .setFooter({ text: 'Role notifier \u00b7 admin log' })
+    .setTimestamp();
 }
 
 export function createGuildMemberUpdateHandler(configOrGetter) {
@@ -191,7 +202,7 @@ export function createGuildMemberUpdateHandler(configOrGetter) {
       await postAdminLog(
         guild,
         config,
-        describeOutcome(newMember, config.roleId, role?.name, assignedBy, dm),
+        buildLogEmbed(newMember, config.roleId, role?.name, assignedBy, dm),
       );
     } catch (error) {
       logger.error(`Failed to handle role assignment: ${error.message}`, error);

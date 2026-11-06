@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, PermissionFlagsBits } from 'discord.js';
+import { Client, EmbedBuilder, GatewayIntentBits, PermissionFlagsBits } from 'discord.js';
 import { loadConfig } from './config.js';
 import { checkLogChannelPermissions, resolveLogChannel } from './lib/channel.js';
 import { resolveBotMember, waitForGuild } from './lib/guild.js';
@@ -110,7 +110,7 @@ async function main() {
         if (issues.length > 0) {
           fail(`Missing log channel permissions: ${issues.join(', ')}`);
         } else {
-          pass('Bot can View Channel and Send Messages there');
+          pass('Bot can View Channel, Send Messages and Embed Links there');
         }
       }
     } else {
@@ -138,8 +138,16 @@ async function main() {
     if (sendTest) {
       if (logChannel) {
         try {
+          const embed = new EmbedBuilder()
+            .setColor(0x57f287)
+            .setTitle('\u2705 Admin log test')
+            .setDescription(
+              `Test from **${client.user.username}**: the admin log channel is configured correctly.`,
+            )
+            .setTimestamp();
+
           await logChannel.send({
-            content: `\u2705 Test from **${client.user.username}**: admin log channel is configured correctly.`,
+            embeds: [embed],
             allowedMentions: { parse: [] },
           });
           pass('Test log entry sent to the admin channel');

@@ -1,9 +1,10 @@
 import { ChannelType, PermissionFlagsBits } from 'discord.js';
 
-// A log entry is plain text, so Embed Links is deliberately not required.
+// Log entries are embeds, so the bot needs Embed Links as well as Send Messages.
 const LOG_CHANNEL_PERMISSIONS = [
   [PermissionFlagsBits.ViewChannel, 'View Channel'],
   [PermissionFlagsBits.SendMessages, 'Send Messages'],
+  [PermissionFlagsBits.EmbedLinks, 'Embed Links'],
 ];
 
 const TEXT_CHANNEL_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);

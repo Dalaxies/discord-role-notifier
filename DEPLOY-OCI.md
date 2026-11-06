@@ -12,7 +12,7 @@ This walks through everything from a blank OCI account to a bot that survives re
 
 - [ ] Discord application created, bot token copied
 - [ ] **Server Members Intent** enabled
-- [ ] Bot invited to server `1499114258007588914` with View Channels, Send Messages, View Audit Log
+- [ ] Bot invited to server `1499114258007588914` with View Channels, Send Messages, Embed Links, View Audit Log
 - [ ] `GUILD_ID` and `ROLE_ID` noted, and an admin log channel chosen (defaults to `1499140628817379459`)
 - [ ] Project runs locally (`npm run doctor` passes)
 
@@ -230,7 +230,7 @@ Set at least:
 DISCORD_TOKEN=your-token-here
 ```
 
-Welcome messages are always sent as DMs. `LOG_CHANNEL_ID` defaults to `1499140628817379459`; every DM posts a short audit entry there (who was messaged, which role, and whether delivery succeeded). Change it here or in the dashboard, or set it empty to disable channel logging.
+Welcome messages are always sent as DMs. `LOG_CHANNEL_ID` defaults to `1499140628817379459`; every DM posts a short embedded audit entry there (who was messaged, which role, and whether delivery succeeded). Change it here or in the dashboard, or set it empty to disable channel logging.
 
 The message is already `templates/welcome.md` — no configuration needed. A details embed follows it by default; to send the text on its own, add:
 
@@ -451,7 +451,7 @@ sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor -- --send-test --u
 Finally, in Discord:
 
 1. Give the watched role to a test member.
-2. Confirm the member receives the DM and the admin log channel receives an audit entry.
+2. Confirm the member receives the DM and the admin log channel receives an embedded audit entry.
 3. Remove the role, then give it again — it should fire again.
 4. Try assigning it from a different moderator account and confirm "Assigned by" is correct.
 
@@ -813,7 +813,7 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | --- | --- |
 | Bot online, no notification | `sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor'`. Check role/guild IDs and the admin log channel. |
 | Member never receives a DM | Their Discord **Privacy & Safety → Direct messages from server members** setting is off, or they don't share the server. The log and admin channel show error `50007`; delivery cannot be forced. |
-| Admin log gets no entries | Check `LOG_CHANNEL_ID` (or the dashboard value) and give the bot View Channel and Send Messages there. |
+| Admin log gets no entries | Check `LOG_CHANNEL_ID` (or the dashboard value) and give the bot View Channel, Send Messages and Embed Links there. |
 | `Used disallowed intents` | Enable **Server Members Intent** in the Developer Portal. |
 | `Missing Access` / `Unknown Channel` | The bot cannot see the admin log channel: re-invite it or grant View Channel there. |
 | "Assigned by: Unknown" | Give the bot **View Audit Log**, or set `LOOKUP_AUDIT_LOG=false` to hide the field. |
