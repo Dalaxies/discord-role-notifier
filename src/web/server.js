@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ChannelType } from 'discord.js';
+
 import { logger, getRecentLogs, subscribeLogs } from '../logger.js';
 import { readMessageTemplate } from '../lib/message.js';
 import { getSettings, updateSettings } from '../settings.js';
@@ -337,6 +339,7 @@ async function statePayload(options) {
   const guild = options.getGuild();
   const settings = getSettings();
   const role = guild?.roles.cache.get(settings.roleId) ?? null;
+  const logChannel = guild?.channels?.cache?.get(settings.logChannelId) ?? null;
 
   const roles = guild
     ? [...guild.roles.cache.values()]
@@ -350,13 +353,24 @@ async function statePayload(options) {
         }))
     : [];
 
+  const channels = guild?.channels?.cache
+    ? [...guild.channels.cache.values()]
+        .filter(
+          (entry) =>
+            entry.type === ChannelType.GuildText || entry.type === ChannelType.GuildAnnouncement,
+        )
+        .sort((a, b) => a.position - b.position)
+        .map((entry) => ({ id: entry.id, name: entry.name }))
+    : [];
+
   return {
     role: { id: settings.roleId, name: role?.name ?? null },
     roles,
+    logChannel: { id: settings.logChannelId, name: logChannel?.name ?? null },
+    channels,
     message: readMessageTemplate(options.config),
     messageFile: options.config.messageTemplateFile,
     messageLimit: MESSAGE_LIMIT,
-    delivery: options.config.delivery,
     embedEnabled: options.config.embedEnabled,
     updatedAt: settings.updatedAt,
     updatedBy: settings.updatedBy,
@@ -388,6 +402,35 @@ async function updateRole(req, res, options, session) {
   logger.info(`Welcome role changed to "${role.name}" (${role.id}) by ${session.user.username}.`);
 
   sendJson(res, 200, { ok: true, role: { id: role.id, name: role.name } });
+}
+
+async function updateLogChannel(req, res, options, session) {
+  assertCsrf(req, session);
+
+  const body = await readJson(req);
+  const channelId = String(body.logChannelId ?? '').trim();
+
+  if (!channelId) throw new HttpError(400, 'Pick a channel first.');
+
+  const guild = options.getGuild();
+  if (!guild) throw new HttpError(503, 'The bot is not connected to the server yet.');
+
+  const channel =
+    guild.channels?.cache?.get(channelId) ??
+    (await guild.channels?.fetch(channelId).catch(() => null));
+
+  if (!channel) throw new HttpError(400, 'That channel does not exist in this server.');
+  if (
+    channel.type !== ChannelType.GuildText &&
+    channel.type !== ChannelType.GuildAnnouncement
+  ) {
+    throw new HttpError(400, 'Pick a standard text or announcement channel.');
+  }
+
+  updateSettings({ logChannelId: channel.id }, { actor: session.user.username });
+  logger.info(`Admin log channel changed to #${channel.name} (${channel.id}) by ${session.user.username}.`);
+
+  sendJson(res, 200, { ok: true, logChannel: { id: channel.id, name: channel.name } });
 }
 
 async function updateMessage(req, res, options, session) {
@@ -437,6 +480,10 @@ async function handleApi(req, res, options, url, path) {
 
   if (path === '/api/role' && req.method === 'PUT') {
     return updateRole(req, res, options, session);
+  }
+
+  if (path === '/api/log-channel' && req.method === 'PUT') {
+    return updateLogChannel(req, res, options, session);
   }
 
   if (path === '/api/message' && req.method === 'PUT') {

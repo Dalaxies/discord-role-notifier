@@ -6,11 +6,10 @@ const SNOWFLAKE_RE = /^\d{17,20}$/;
 
 const DEFAULT_GUILD_ID = '1499114258007588914';
 const DEFAULT_ROLE_ID = '1555015410112270458';
+const DEFAULT_LOG_CHANNEL_ID = '1499140628817379459';
 const DEFAULT_TEMPLATE_FILE = 'templates/welcome.md';
 const DEFAULT_DM_TEMPLATE = 'You were assigned the **{role}** role in **{server}**.';
-const DEFAULT_CHANNEL_TEMPLATE = '👋 {user} was assigned the **{role}** role.';
 const DEFAULT_EMBED_COLOR = 0x57f287;
-const DELIVERY_MODES = new Set(['dm', 'channel', 'both']);
 
 function envText(name) {
   const value = process.env[name];
@@ -85,34 +84,23 @@ export function loadConfig() {
     errors.push(`ROLE_ID must be a Discord role ID (17-20 digits), got "${roleId}".`);
   }
 
-  const channelId = envText('CHANNEL_ID') ?? '';
-  if (channelId !== '' && !SNOWFLAKE_RE.test(channelId)) {
-    errors.push(`CHANNEL_ID must be a channel ID (17-20 digits) or empty, got "${channelId}".`);
+  const logChannelId = envText('LOG_CHANNEL_ID') ?? DEFAULT_LOG_CHANNEL_ID;
+  if (logChannelId !== '' && !SNOWFLAKE_RE.test(logChannelId)) {
+    errors.push(`LOG_CHANNEL_ID must be a channel ID (17-20 digits) or empty, got "${logChannelId}".`);
   }
-
-  const deliveryValue = envOr('DELIVERY', 'dm').toLowerCase();
-  if (!DELIVERY_MODES.has(deliveryValue)) {
-    errors.push(`DELIVERY must be one of: dm, channel, both (got "${deliveryValue}").`);
-  }
-  const delivery = DELIVERY_MODES.has(deliveryValue) ? deliveryValue : 'dm';
 
   const embedEnabled = parseBoolean(errors, 'EMBED_ENABLED', true);
 
-  // Message precedence: MESSAGE_TEMPLATE_FILE > MESSAGE_TEMPLATE > built-in default.
-  // For DM delivery the bundled templates/welcome.md is the default, so a fresh
-  // install sends the full welcome message with no configuration. Channel
-  // delivery keeps its short built-in line unless a file is named explicitly.
+  // Message precedence: MESSAGE_TEMPLATE_FILE > MESSAGE_TEMPLATE > bundled file.
+  // The bundled templates/welcome.md is the default, so a fresh install sends
+  // the full welcome message with no configuration.
   const configuredFile = envText('MESSAGE_TEMPLATE_FILE') ?? '';
   const rawTemplate = process.env.MESSAGE_TEMPLATE;
 
   // An explicit MESSAGE_TEMPLATE (including an empty one, which means "embed
   // only") opts out of the bundled file, matching the documented precedence.
   const templateFile =
-    configuredFile !== ''
-      ? configuredFile
-      : rawTemplate !== undefined || delivery === 'channel'
-        ? ''
-        : DEFAULT_TEMPLATE_FILE;
+    configuredFile !== '' ? configuredFile : rawTemplate !== undefined ? '' : DEFAULT_TEMPLATE_FILE;
 
   let fileTemplate;
 
@@ -129,7 +117,7 @@ export function loadConfig() {
     }
   }
 
-  const defaultTemplate = delivery === 'dm' ? DEFAULT_DM_TEMPLATE : DEFAULT_CHANNEL_TEMPLATE;
+  const defaultTemplate = DEFAULT_DM_TEMPLATE;
 
   let messageTemplate;
   if (fileTemplate !== undefined) {
@@ -194,14 +182,12 @@ export function loadConfig() {
     token,
     guildId,
     roleId,
-    channelId,
-    delivery,
+    logChannelId,
     messageTemplate,
     messageTemplateFile: fileTemplate === undefined ? null : templateFile,
     embedEnabled,
     embedTitle,
     embedColor: parseColor(errors, 'EMBED_COLOR', DEFAULT_EMBED_COLOR),
-    mentionMember: parseBoolean(errors, 'MENTION_MEMBER', true),
     ignoreBots: parseBoolean(errors, 'IGNORE_BOTS', true),
     lookupAuditLog: parseBoolean(errors, 'LOOKUP_AUDIT_LOG', true),
     dryRun: parseBoolean(errors, 'DRY_RUN', false),
@@ -228,7 +214,7 @@ export function loadConfig() {
 export const DEFAULTS = Object.freeze({
   guildId: DEFAULT_GUILD_ID,
   roleId: DEFAULT_ROLE_ID,
+  logChannelId: DEFAULT_LOG_CHANNEL_ID,
   dmTemplate: DEFAULT_DM_TEMPLATE,
-  channelTemplate: DEFAULT_CHANNEL_TEMPLATE,
   embedColor: DEFAULT_EMBED_COLOR,
 });

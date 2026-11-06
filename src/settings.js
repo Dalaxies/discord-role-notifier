@@ -24,7 +24,7 @@ function persist() {
  * Loads dashboard-managed settings, falling back to the .env values.
  * Call once at startup.
  */
-export function loadSettings(fallbackRoleId) {
+export function loadSettings(fallbackRoleId, fallbackLogChannelId = '') {
   if (state) return state;
 
   const file = settingsFile();
@@ -43,8 +43,15 @@ export function loadSettings(fallbackRoleId) {
       ? stored.roleId
       : fallbackRoleId;
 
+  const logChannelId =
+    typeof stored.logChannelId === 'string' &&
+    (stored.logChannelId === '' || SNOWFLAKE_RE.test(stored.logChannelId))
+      ? stored.logChannelId
+      : fallbackLogChannelId;
+
   state = {
     roleId,
+    logChannelId,
     updatedAt: typeof stored.updatedAt === 'string' ? stored.updatedAt : null,
     updatedBy: typeof stored.updatedBy === 'string' ? stored.updatedBy : null,
   };
@@ -71,6 +78,14 @@ export function updateSettings(patch, { actor = 'dashboard' } = {}) {
       throw new Error('Role ID must be a Discord role ID (17-20 digits).');
     }
     next.roleId = roleId;
+  }
+
+  if (patch.logChannelId !== undefined) {
+    const logChannelId = String(patch.logChannelId).trim();
+    if (!SNOWFLAKE_RE.test(logChannelId)) {
+      throw new Error('Log channel ID must be a Discord channel ID (17-20 digits).');
+    }
+    next.logChannelId = logChannelId;
   }
 
   next.updatedAt = new Date().toISOString();

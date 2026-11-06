@@ -2,7 +2,7 @@ import { Client, Events, GatewayIntentBits } from 'discord.js';
 import { loadConfig } from './config.js';
 import { logger } from './logger.js';
 import { createGuildMemberUpdateHandler } from './events/guild-member-update.js';
-import { checkChannelPermissions, resolveNotificationChannel } from './lib/channel.js';
+import { checkLogChannelPermissions, resolveLogChannel } from './lib/channel.js';
 import { resolveBotMember, waitForGuild } from './lib/guild.js';
 import { getSettings, loadSettings } from './settings.js';
 import { startWebServer } from './web/server.js';
@@ -15,11 +15,31 @@ function inviteUrl(clientId) {
 
 async function main() {
   const config = loadConfig();
-  const settings = loadSettings(config.roleId);
+  const settings = loadSettings(config.roleId, config.logChannelId);
 
-  // The dashboard can change the role at runtime, so the handler asks for the
-  // current configuration on every event instead of capturing it once.
-  const currentConfig = () => ({ ...config, roleId: getSettings().roleId });
+  // DELIVERY and CHANNEL_ID configured channel copies of the welcome message,
+  // which no longer exist. Say so once instead of silently ignoring them.
+  const legacyDelivery = process.env.DELIVERY?.trim().toLowerCase();
+  if (legacyDelivery && legacyDelivery !== 'dm') {
+    logger.warn(
+      `DELIVERY=${legacyDelivery} is no longer supported: welcome messages are always sent as DMs. Remove DELIVERY from .env.`,
+    );
+  }
+
+  if (process.env.CHANNEL_ID?.trim()) {
+    logger.warn(
+      'CHANNEL_ID no longer receives welcome messages. Set the admin log channel in the dashboard or via LOG_CHANNEL_ID.',
+    );
+  }
+
+  // The dashboard can change the role and log channel at runtime, so the
+  // handler asks for the current configuration on every event instead of
+  // capturing it once.
+  const currentConfig = () => ({
+    ...config,
+    roleId: getSettings().roleId,
+    logChannelId: getSettings().logChannelId,
+  });
 
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
@@ -60,24 +80,24 @@ async function main() {
       );
     }
 
-    if (config.delivery === 'dm' || config.delivery === 'both') {
-      logger.info('Notifications will be sent as direct messages to the member.');
-      logger.info('Members must share this server and allow "Direct messages from server members".');
-    }
+    logger.info('Notifications will be sent as direct messages to the member.');
+    logger.info('Members must share this server and allow "Direct messages from server members".');
 
-    if (config.delivery === 'channel' || config.delivery === 'both') {
+    if (settings.logChannelId) {
       try {
-        const channel = await resolveNotificationChannel(guild, config.channelId);
-        const issues = checkChannelPermissions(channel, await resolveBotMember(guild));
+        const channel = await resolveLogChannel(guild, settings.logChannelId);
+        const issues = checkLogChannelPermissions(channel, await resolveBotMember(guild));
 
         if (issues.length > 0) {
-          logger.error(`Missing permissions in #${channel.name}: ${issues.join(', ')}`);
+          logger.error(`Missing permissions in admin log #${channel.name}: ${issues.join(', ')}`);
         } else {
-          logger.info(`Channel notifications will be posted in #${channel.name} (${channel.id}).`);
+          logger.info(`Admin log will be posted in #${channel.name} (${channel.id}).`);
         }
       } catch (error) {
         logger.error(error.message);
       }
+    } else {
+      logger.warn('No admin log channel is configured; DMs will not be recorded in a channel.');
     }
 
     if (config.dryRun) {

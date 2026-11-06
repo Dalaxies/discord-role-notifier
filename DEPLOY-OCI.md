@@ -12,8 +12,8 @@ This walks through everything from a blank OCI account to a bot that survives re
 
 - [ ] Discord application created, bot token copied
 - [ ] **Server Members Intent** enabled
-- [ ] Bot invited to server `1499114258007588914` with View Channels, Send Messages, Embed Links, View Audit Log
-- [ ] `GUILD_ID`, `ROLE_ID` noted, and `DELIVERY` chosen (`dm` or `channel`)
+- [ ] Bot invited to server `1499114258007588914` with View Channels, Send Messages, View Audit Log
+- [ ] `GUILD_ID` and `ROLE_ID` noted, and an admin log channel chosen (defaults to `1499140628817379459`)
 - [ ] Project runs locally (`npm run doctor` passes)
 
 If not, do [README steps 1–5](README.md#1-create-the-discord-application) first. Debugging the bot locally is much faster than debugging it through SSH.
@@ -228,18 +228,17 @@ Set at least:
 
 ```dotenv
 DISCORD_TOKEN=your-token-here
-DELIVERY=dm
 ```
 
-`DELIVERY=dm` is the default: the bot sends a direct message to the member. For channel delivery use `DELIVERY=channel` and set `CHANNEL_ID`; `DELIVERY=both` does both.
+Welcome messages are always sent as DMs. `LOG_CHANNEL_ID` defaults to `1499140628817379459`; every DM posts a short audit entry there (who was messaged, which role, and whether delivery succeeded). Change it here or in the dashboard, or set it empty to disable channel logging.
 
-With `DELIVERY=dm`, the message is already `templates/welcome.md` — no configuration needed. A details embed follows it by default; to send the text on its own, add:
+The message is already `templates/welcome.md` — no configuration needed. A details embed follows it by default; to send the text on its own, add:
 
 ```dotenv
 EMBED_ENABLED=false
 ```
 
-To use a different file (or any file with `DELIVERY=channel`), also set `MESSAGE_TEMPLATE_FILE=path/to/message.md`.
+To use a different file, also set `MESSAGE_TEMPLATE_FILE=path/to/message.md`.
 
 Save with `Ctrl+O`, `Enter`, then exit with `Ctrl+X`, and start it:
 
@@ -288,7 +287,7 @@ You want `active (running)` and `enabled`.
 
 ### Optional: web dashboard
 
-The bot can serve a small dashboard for picking the welcome role, editing the welcome message and watching the log live. It is off by default and only listens on `127.0.0.1`.
+The bot can serve a small dashboard for picking the welcome role, choosing the admin log channel, editing the welcome message and watching the log live. It is off by default and only listens on `127.0.0.1`.
 
 1. In the Developer Portal → your application → **OAuth2**:
    - copy the **Client Secret**
@@ -442,7 +441,7 @@ sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor'
 >
 > **Run every command here against `/opt`, never against `~/discord-role-notifier`.** Dependencies are installed in `/opt` by `install.sh`, and `.env` lives there too. Running `npm run doctor` in the clone fails with `ERR_MODULE_NOT_FOUND: Cannot find package 'discord.js'` because the clone has no `node_modules`. The clone exists only to `git pull` from.
 
-Then send a real test notification. For DM delivery this DMs the **server owner** by default; add `--user <ID>` to test someone else. For channel delivery it posts in the channel:
+Then send a real test notification. This DMs the **server owner** by default; add `--user <ID>` to test someone else. It also posts a test entry in the admin log channel:
 
 ```bash
 sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor -- --send-test'
@@ -452,7 +451,7 @@ sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor -- --send-test --u
 Finally, in Discord:
 
 1. Give the watched role to a test member.
-2. Confirm the member receives the DM (or the channel post arrives, depending on `DELIVERY`).
+2. Confirm the member receives the DM and the admin log channel receives an audit entry.
 3. Remove the role, then give it again — it should fire again.
 4. Try assigning it from a different moderator account and confirm "Assigned by" is correct.
 
@@ -656,7 +655,9 @@ sudo bash deploy/install.sh
 Two things to know about that copy step:
 
 - **It reconciles rather than overwrites.** Every top-level entry except `.env` is deleted from `/opt` and re-extracted from the clone, so files you deleted from the repo disappear on the server too.
-- **Dashboard edits do not survive an update.** If you changed the welcome message in the browser, that edit lives only in `/opt/.../templates/welcome.md` and is replaced by the repo version. Edit `templates/welcome.md` in the repo and push it instead — the dashboard is for quick tweaks, and every save is logged so you can copy the text back out. The same applies to `data/settings.json`.
+- **Dashboard edits do not survive an update.** If you changed the welcome message in the browser, that edit lives only in `/opt/.../templates/welcome.md` and is replaced by the repo version. Edit `templates/welcome.md` in the repo and push it instead - the dashboard is for quick tweaks, and every save is logged so you can copy the text back out. The same applies to `data/settings.json`.
+
+> **`DELIVERY` and `CHANNEL_ID` are retired.** Welcome messages are always DMs now. The old channel copy is replaced by the admin log channel (`LOG_CHANNEL_ID`, default `1499140628817379459`). Remove `DELIVERY` and `CHANNEL_ID` from `.env`; if either is still present the bot logs a warning at startup and ignores it.
 
 If you change dependencies in `package.json`, `git pull` plus the installer is enough — `npm install --omit=dev` resolves them.
 
@@ -810,10 +811,11 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 
 | Symptom | Fix |
 | --- | --- |
-| Bot online, no notification | `sudo npm run doctor` in `/opt/discord-role-notifier`. Check `DELIVERY`, role/guild IDs, and — for channel mode — the channel ID and permissions. |
-| Member never receives a DM | Their Discord **Privacy & Safety → Direct messages from server members** setting is off, or they don't share the server. The log shows error `50007`; use `DELIVERY=both` if you need a channel copy. |
+| Bot online, no notification | `sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor'`. Check role/guild IDs and the admin log channel. |
+| Member never receives a DM | Their Discord **Privacy & Safety → Direct messages from server members** setting is off, or they don't share the server. The log and admin channel show error `50007`; delivery cannot be forced. |
+| Admin log gets no entries | Check `LOG_CHANNEL_ID` (or the dashboard value) and give the bot View Channel and Send Messages there. |
 | `Used disallowed intents` | Enable **Server Members Intent** in the Developer Portal. |
-| `Missing Access` / `Unknown Channel` | Only affects channel delivery: re-invite the bot or grant View Channel on that channel. |
+| `Missing Access` / `Unknown Channel` | The bot cannot see the admin log channel: re-invite it or grant View Channel there. |
 | "Assigned by: Unknown" | Give the bot **View Audit Log**, or set `LOOKUP_AUDIT_LOG=false` to hide the field. |
 | Two notifications | Two instances are running (local laptop + server). Stop one. |
 
@@ -848,7 +850,7 @@ If you ever need to recreate it:
 3. ssh opc@IP
 4. git clone https://github.com/Dalaxies/discord-role-notifier.git ~/discord-role-notifier
 5. cd ~/discord-role-notifier && sudo bash deploy/install.sh
-6. edit /opt/discord-role-notifier/.env (token, delivery, channel ID if needed)
+6. edit /opt/discord-role-notifier/.env (token; log channel ID if changing the default)
 7. sudo systemctl enable --now discord-role-notifier
 8. sudo journalctl -u discord-role-notifier -f
 ```

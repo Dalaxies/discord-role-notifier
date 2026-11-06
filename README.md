@@ -1,6 +1,6 @@
 # Discord Role Notifier
 
-Sends a **direct message (DM)** to a member whenever they are given a specific role. Channel posting is also supported, or both at once, via `DELIVERY`.
+Sends a **direct message (DM)** to a member whenever they are given a specific role. Every DM is also recorded in a configurable **admin log channel** for auditing.
 
 | Setting | Value |
 | --- | --- |
@@ -26,7 +26,7 @@ That message is sent verbatim from `templates/welcome.md` and re-read on every n
 
 The message text, embed title and colour are configurable, and a preflight script (`npm run doctor`) checks the token, IDs and permissions before you deploy.
 
-> **DM requirements:** bots can only DM users who **share a server** with them, and the member must have **"Direct messages from server members"** enabled (Discord → Privacy & Safety). If a member has DMs disabled, the bot logs a warning and cannot deliver; use `DELIVERY=both` if you want a channel copy as a safety net. Channel mentions like `<#123…>` can also fail to render as clickable links inside a DM — if that happens, use `https://discord.com/channels/<guild_id>/<channel_id>` instead.
+> **DM requirements:** bots can only DM users who **share a server** with them, and the member must have **"Direct messages from server members"** enabled (Discord → Privacy & Safety). If a member has DMs disabled, the bot logs the failure and records it in the admin log channel; it cannot force delivery. Channel mentions like `<#123…>` can also fail to render as clickable links inside a DM — if that happens, use `https://discord.com/channels/<guild_id>/<channel_id>` instead.
 
 ---
 
@@ -38,7 +38,7 @@ Discord Gateway  ──(outbound WSS 443)──►  Node.js bot  ──►  Disc
 
 - The bot opens an **outbound** connection to Discord. It needs **no inbound ports, no domain name and no public web server**.
 - It listens for `guildMemberUpdate`, compares the member's roles before/after the event, and reacts only when the watched role was **added**.
-- It then sends the notification by DM, to a channel, or both.
+- It then sends the welcome message by DM, and posts a short audit entry to the admin log channel (success or failure).
 - Optionally it reads the server audit log to show **who** assigned the role.
 - It runs as a single process. Memory use is roughly 80–150 MB.
 
@@ -63,10 +63,10 @@ Or build it manually:
 2. Scopes: `bot`
 3. Bot permissions:
    - View Audit Log (for the "Assigned by" field; skip if `LOOKUP_AUDIT_LOG=false`)
-   - Only if you use `DELIVERY=channel` or `both`: View Channels, Send Messages, Embed Links
+   - View Channels and Send Messages in the admin log channel
 4. Open the generated URL, pick server `1499114258007588914`, and authorize.
 
-The equivalent permissions integer is `85120` (a superset that also covers channel delivery):
+The equivalent permissions integer is `85120`:
 
 ```
 https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&permissions=85120&scope=bot
@@ -78,7 +78,7 @@ In Discord: **User Settings → Advanced → Developer Mode** → ON. Then:
 
 - Right-click the server → **Copy Server ID** → `GUILD_ID`
 - Right-click the role → **Copy Role ID** → `ROLE_ID`
-- For channel delivery only: right-click the target channel → **Copy Channel ID** → `CHANNEL_ID`
+- Right-click the admin log channel → **Copy Channel ID** → `LOG_CHANNEL_ID` (the dashboard can set this too)
 
 The defaults are already set for server `1499114258007588914` and role `1555015410112270458`.
 
@@ -91,14 +91,13 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Minimum required values (DM delivery is the default):
+Minimum required values:
 
 ```dotenv
 DISCORD_TOKEN=your-bot-token
-DELIVERY=dm
 ```
 
-If you want channel delivery instead, also set `CHANNEL_ID` and change `DELIVERY` to `channel` (or `both`).
+`LOG_CHANNEL_ID` already defaults to `1499140628817379459`, so the admin log works without further configuration. Change it in `.env` or in the dashboard.
 
 `GUILD_ID` and `ROLE_ID` default to the values above but are explicit in `.env.example` so they are easy to change.
 
@@ -109,24 +108,22 @@ If you want channel delivery instead, also set `CHANNEL_ID` and change `DELIVERY
 | `DISCORD_TOKEN` | — | **Required.** Bot token from the Developer Portal. |
 | `GUILD_ID` | `1499114258007588914` | Server to watch. |
 | `ROLE_ID` | `1555015410112270458` | Role that triggers a notification when added. |
-| `DELIVERY` | `dm` | `dm`, `channel` or `both`. |
-| `CHANNEL_ID` | *(empty)* | Channel for `channel`/`both`. Empty = the server's system channel. Not used for DM-only. |
-| `MESSAGE_TEMPLATE` | `templates/welcome.md` for DM | Text above the embed. An explicit value here overrides the bundled file. Empty = embed only (no ping). |
-| `MESSAGE_TEMPLATE_FILE` | `templates/welcome.md` for `dm`/`both`, *(unset)* for `channel` | Path to a file containing the message (relative to the project directory). Takes precedence over `MESSAGE_TEMPLATE`. Ideal for multi-line messages. |
+| `LOG_CHANNEL_ID` | `1499140628817379459` | Channel that receives an audit entry after every DM. Empty disables channel logging. Overridden by the dashboard. |
+| `MESSAGE_TEMPLATE` | `templates/welcome.md` | Text above the embed. An explicit value here overrides the bundled file. Empty = embed only. |
+| `MESSAGE_TEMPLATE_FILE` | `templates/welcome.md` | Path to a file containing the message (relative to the project directory). Takes precedence over `MESSAGE_TEMPLATE`. Ideal for multi-line messages. |
 | `EMBED_ENABLED` | `true` | Send the details embed after the text. Set `false` to send only your message. |
 | `EMBED_TITLE` | `Role assigned` | Embed title. |
 | `EMBED_COLOR` | `#57F287` | Embed colour, hex. |
-| `MENTION_MEMBER` | `true` | Allow channel posts to ping the member. No effect on DMs. |
 | `IGNORE_BOTS` | `true` | Ignore role changes on bot accounts. |
 | `LOOKUP_AUDIT_LOG` | `true` | Show who assigned the role (needs View Audit Log). |
 | `DRY_RUN` | `false` | Log events without sending messages. |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info` or `debug`. |
 
-> **Note:** template precedence is `MESSAGE_TEMPLATE_FILE` → `MESSAGE_TEMPLATE` → built-in default. If `MESSAGE_TEMPLATE` is defined in `.env` (even as an empty value), it overrides the delivery-aware default, so delete or comment the line to get the default back. The template file is re-read **on every notification**, so edits take effect immediately — no restart needed.
+> **Note:** template precedence is `MESSAGE_TEMPLATE_FILE` → `MESSAGE_TEMPLATE` → built-in default. If `MESSAGE_TEMPLATE` is defined in `.env` (even as an empty value), it overrides the bundled file, so delete or comment the line to get `templates/welcome.md` back. The template file is re-read **on every notification**, so edits take effect immediately — no restart needed.
 
 ### Multi-line messages
 
-DM delivery already sends `templates/welcome.md` verbatim, so multi-line Markdown is the default and needs no configuration. To use a different file — or any file with `DELIVERY=channel` — point at it:
+The bot sends `templates/welcome.md` verbatim, so multi-line Markdown is the default and needs no configuration. To use a different file, point at it:
 
 ```dotenv
 MESSAGE_TEMPLATE_FILE=templates/welcome.md
@@ -176,7 +173,7 @@ Unknown placeholders are left untouched, so a typo shows up as `{typo}` in Disco
    npm run doctor
    ```
 
-3. Send a test message. For DM delivery this DMs the **server owner** by default; pass `--user <id>` to test someone else. For channel delivery it posts in the configured channel:
+3. Send a test message. This DMs the **server owner** by default; pass `--user <id>` to test someone else. It also posts a test entry in the admin log channel:
 
    ```powershell
    npm run doctor -- --send-test
@@ -189,7 +186,7 @@ Unknown placeholders are left untouched, so a typo shows up as `{typo}` in Disco
    npm start
    ```
 
-5. In Discord, assign the role to a test member. The console should show the event and the member should receive a DM (or the channel post, depending on `DELIVERY`). Remove the role and assign it again to confirm it fires on each new assignment.
+5. In Discord, assign the role to a test member. The console should show the event, the member should receive a DM, and the admin log channel should receive an audit entry. Remove the role and assign it again to confirm it fires on each new assignment.
 
 `npm run dev` restarts automatically when source files change.
 
@@ -208,7 +205,7 @@ It uses the same template (`MESSAGE_TEMPLATE_FILE` or `MESSAGE_TEMPLATE`) and re
 
 ## 6. Web dashboard (optional)
 
-A small dashboard lets a server admin pick the welcome role, edit the welcome message and watch the bot's log live. Login uses Discord OAuth2; only the server owner or members with **Manage Server** can sign in.
+A small dashboard lets a server admin pick the welcome role, choose the admin log channel, edit the welcome message and watch the bot's log live. Login uses Discord OAuth2; only the server owner or members with **Manage Server** can sign in.
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
@@ -216,10 +213,14 @@ A small dashboard lets a server admin pick the welcome role, edit the welcome me
 ├───────────────────────────┬──────────────────────────────┤
 │  Welcome role             │  Activity                    │
 │  [ WoW Forever      ▾ ]   │  12:01:44 INFO  DM sent …    │
-│  [ Save role ]            │  12:01:44 INFO  Role added … │
+│  [ Save role ]            │  12:01:44 INFO  Admin log …  │
 │                           │  12:02:10 WARN  50007 …      │
+│  Admin log channel        │                              │
+│  [ #mod-log         ▾ ]   │  [ All levels ▾ ] [ Pause ]  │
+│  [ Save channel ]         │                              │
+│                           │                              │
 │  Welcome message          │                              │
-│  ┌─────────────────────┐  │  [ All levels ▾ ] [ Pause ]  │
+│  ┌─────────────────────┐  │                              │
 │  │ ## WELCOME TO …     │  │                              │
 │  └─────────────────────┘  │                              │
 │  [ Save message ]  912/2000                              │
@@ -251,6 +252,7 @@ Restart the bot, then open <http://localhost:3000>.
 | Panel | Behaviour |
 | --- | --- |
 | **Welcome role** | Lists every role in the server. Saving writes `data/settings.json` and applies to the next role assignment — no restart. |
+| **Admin log channel** | Lists text and announcement channels. Saving writes `data/settings.json`; the next DM is logged there. |
 | **Welcome message** | Edits `MESSAGE_TEMPLATE_FILE` in place. The next DM uses it (the file is re-read per send). |
 | **Activity** | Live log stream over SSE, with level filter and pause. Last 500 lines are kept in memory. |
 
@@ -304,7 +306,7 @@ On the server, after cloning the project:
 ```bash
 cd ~/discord-role-notifier
 sudo bash deploy/install.sh      # creates /opt/discord-role-notifier and a .env
-sudo nano /opt/discord-role-notifier/.env   # token, DELIVERY, and CHANNEL_ID if needed
+sudo nano /opt/discord-role-notifier/.env   # token; LOG_CHANNEL_ID if changing the default
 sudo systemctl enable --now discord-role-notifier
 sudo journalctl -u discord-role-notifier -f
 ```
@@ -327,7 +329,7 @@ sudo journalctl -u discord-role-notifier -f
 │   │   └── auth.js                     # Discord OAuth2, sessions, admin check
 │   └── lib/
 │       ├── audit.js                    # "assigned by" lookup
-│       ├── channel.js                  # channel + permission checks
+│       ├── channel.js                  # admin log channel + permission checks
 │       ├── guild.js                    # guild/member resolution after READY
 │       ├── message.js                  # template file loading (hot reload)
 │       └── template.js                 # {placeholder} rendering
@@ -363,11 +365,11 @@ sudo journalctl -u discord-role-notifier -f
 | --- | --- |
 | `Used disallowed intents` on startup | Enable **Server Members Intent** in the Developer Portal, then restart. |
 | `Invalid configuration: DISCORD_TOKEN is missing` | `.env` not found or token empty. The bot reads `.env` from the working directory. |
-| Bot online, no messages | Check `DELIVERY`, `ROLE_ID` and `GUILD_ID`; for channel mode also `CHANNEL_ID`. Run `npm run doctor`. |
-| Member never receives a DM | Their **Privacy & Safety → Direct messages from server members** setting is off, or they no longer share the server. The log shows Discord error `50007`; this cannot be forced. |
-| DM works for some members only | That is the per-user DM privacy setting. Use `DELIVERY=both` if you need a reliable channel copy. |
-| `Cannot post in #channel: missing …` | Give the bot View Channel, Send Messages, Embed Links in that channel (channel-level overrides can block it). |
-| `CHANNEL_ID … was not found` | Wrong channel ID, or the bot cannot see that channel. Not used when `DELIVERY=dm`. |
+| Bot online, no messages | Check `ROLE_ID` and `GUILD_ID`. Run `npm run doctor`. |
+| Member never receives a DM | Their **Privacy & Safety → Direct messages from server members** setting is off, or they no longer share the server. The log and admin channel show Discord error `50007`; this cannot be forced. |
+| Admin channel gets no entries | Check `LOG_CHANNEL_ID` (or the dashboard setting), and give the bot View Channel and Send Messages there. Run `npm run doctor`. |
+| `Cannot post in admin log #channel: missing …` | Give the bot View Channel and Send Messages in that channel (channel-level overrides can block it). |
+| `LOG_CHANNEL_ID … was not found` | Wrong channel ID, or the bot cannot see that channel. Set it again in the dashboard or `.env`. |
 | Message arrives twice | Two copies of the bot are running (e.g. local + server). Stop one. |
 | Message on nickname change | Should not happen — the code compares role sets. If it does, set `LOG_LEVEL=debug` and open an issue with the log. |
 | `Unknown Channel` / `Missing Access` | Bot was removed from the server or lost channel access; re-invite and check permissions. |
@@ -382,11 +384,11 @@ sudo journalctl -u discord-role-notifier -f
 
 - A role added **by another bot** still triggers the notification (unless the member is a bot and `IGNORE_BOTS=true`).
 - DMs require a shared server and the member's consent (the "Direct messages from server members" privacy setting). Discord does not let bots bypass this.
-- In `both` mode, a failed DM does not stop the channel post; each target is attempted independently.
+- A failed DM is still recorded in the admin log channel, but a broken log channel never stops the DM — each target is independent.
 - "Assigned by" comes from the audit log and is best-effort: it can show `Unknown` if the bot lacks View Audit Log or the entry is older than ~20 seconds.
 - The bot needs no privileged message content access, and it does not read message history.
 - Discord rate limits are handled by discord.js; a single message per role assignment is far below any limit.
-- Role hierarchy does not matter for *notifications*; for channel delivery the bot only needs permission to post in that channel.
+- Role hierarchy does not matter for *notifications*; the bot only needs permission to post in the admin log channel.
 
 ---
 
@@ -394,7 +396,7 @@ sudo journalctl -u discord-role-notifier -f
 
 - Treat `DISCORD_TOKEN` like a password. It is excluded via `.gitignore`; on the server `install.sh` sets `.env` to mode `600`.
 - If the token leaks, click **Reset Token** in the Developer Portal and update `.env`.
-- Keep the bot's permissions minimal (View Audit Log, plus channel permissions only if you use channel delivery).
+- Keep the bot's permissions minimal (View Audit Log, plus View Channel and Send Messages in the admin log channel).
 - The dashboard adds no public port when left on `127.0.0.1`; reach it through an SSH tunnel. To expose it, run `deploy/setup-caddy.sh` (HTTPS via Caddy) and set `WEB_COOKIE_SECURE=true`.
 - Dashboard sessions are in memory and expire after `SESSION_TTL_HOURS` (default 12). The bot token and OAuth access tokens are never stored in the browser.
 - For OCI, restrict SSH ingress to your own IP address and keep the OS patched — see the deployment guide.

@@ -1,48 +1,42 @@
 import { ChannelType, PermissionFlagsBits } from 'discord.js';
 
-const REQUIRED_PERMISSIONS = [
+// A log entry is plain text, so Embed Links is deliberately not required.
+const LOG_CHANNEL_PERMISSIONS = [
   [PermissionFlagsBits.ViewChannel, 'View Channel'],
   [PermissionFlagsBits.SendMessages, 'Send Messages'],
-  [PermissionFlagsBits.EmbedLinks, 'Embed Links'],
 ];
 
 const TEXT_CHANNEL_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
 
 /**
- * Returns the channel configured in CHANNEL_ID, or the server's system channel
- * when CHANNEL_ID is empty.
+ * Returns the channel the bot posts its admin log to, or null when logging is
+ * disabled (LOG_CHANNEL_ID was emptied).
  */
-export async function resolveNotificationChannel(guild, channelId) {
-  if (channelId) {
-    const cached = guild.channels.cache.get(channelId);
-    const channel = cached ?? (await guild.channels.fetch(channelId).catch(() => null));
+export async function resolveLogChannel(guild, channelId) {
+  if (!channelId) return null;
 
-    if (!channel) {
-      throw new Error(`CHANNEL_ID ${channelId} was not found in "${guild.name}".`);
-    }
+  const cached = guild.channels.cache.get(channelId);
+  const channel = cached ?? (await guild.channels.fetch(channelId).catch(() => null));
 
-    if (!TEXT_CHANNEL_TYPES.has(channel.type)) {
-      throw new Error(
-        `Channel ${channelId} is not a standard text channel. Use a text or announcement channel.`,
-      );
-    }
-
-    return channel;
+  if (!channel) {
+    throw new Error(`LOG_CHANNEL_ID ${channelId} was not found in "${guild.name}".`);
   }
 
-  if (guild.systemChannel) return guild.systemChannel;
+  if (!TEXT_CHANNEL_TYPES.has(channel.type)) {
+    throw new Error(
+      `Channel ${channelId} is not a standard text channel. Use a text or announcement channel.`,
+    );
+  }
 
-  throw new Error(
-    'CHANNEL_ID is not set and this server has no system channel. Set CHANNEL_ID in .env.',
-  );
+  return channel;
 }
 
 /** Returns a list of human-readable permissions the bot is missing. */
-export function checkChannelPermissions(channel, botMember) {
+export function checkLogChannelPermissions(channel, botMember) {
   if (!botMember) return ['bot is not a member of the server'];
 
   const permissions = channel.permissionsFor(botMember);
   if (!permissions) return ['channel permissions could not be calculated'];
 
-  return REQUIRED_PERMISSIONS.filter(([bit]) => !permissions.has(bit)).map(([, name]) => name);
+  return LOG_CHANNEL_PERMISSIONS.filter(([bit]) => !permissions.has(bit)).map(([, name]) => name);
 }

@@ -77,7 +77,8 @@ if [[ ! -f "${APP_DIR}/.env" ]]; then
   cp "${APP_DIR}/.env.example" "${APP_DIR}/.env"
   echo
   echo "!! ${APP_DIR}/.env was created from .env.example."
-  echo "!! Add DISCORD_TOKEN (and CHANNEL_ID if DELIVERY is channel/both), then run: sudo systemctl restart ${SERVICE_NAME}"
+  echo "!! Add DISCORD_TOKEN, then run: sudo systemctl restart ${SERVICE_NAME}"
+  echo "!! LOG_CHANNEL_ID already defaults to 1499140628817379459; change it in .env or the dashboard."
 fi
 
 chown -R "${SERVICE_USER}:${SERVICE_USER}" "${APP_DIR}"

@@ -37,6 +37,10 @@ const els = {
   roleTag: el('role-tag'),
   roleHint: el('role-hint'),
   saveRole: el('save-role'),
+  logChannelSelect: el('log-channel-select'),
+  logChannelTag: el('log-channel-tag'),
+  logChannelHint: el('log-channel-hint'),
+  saveLogChannel: el('save-log-channel'),
   message: el('message'),
   messageFile: el('message-file'),
   counter: el('counter'),
@@ -176,6 +180,45 @@ async function loadState() {
     els.roleHint.classList.add('warn');
   }
 
+  els.logChannelSelect.replaceChildren();
+
+  const knownChannels = new Set();
+
+  for (const channel of data.channels) {
+    const option = document.createElement('option');
+    option.value = channel.id;
+    option.textContent = `#${channel.name}`;
+    els.logChannelSelect.append(option);
+    knownChannels.add(channel.id);
+  }
+
+  if (data.logChannel?.id && !knownChannels.has(data.logChannel.id)) {
+    const option = document.createElement('option');
+    option.value = data.logChannel.id;
+    option.textContent = data.logChannel.name
+      ? `#${data.logChannel.name}`
+      : `Unknown channel ${data.logChannel.id}`;
+    els.logChannelSelect.append(option);
+  }
+
+  if (data.logChannel?.id) {
+    els.logChannelSelect.value = data.logChannel.id;
+    els.logChannelTag.textContent = data.logChannel.name
+      ? `#${data.logChannel.name}`
+      : `Unknown channel ${data.logChannel.id}`;
+    els.logChannelHint.textContent = '';
+    els.logChannelHint.classList.remove('warn');
+  } else {
+    els.logChannelTag.textContent = 'Not set';
+    els.logChannelHint.textContent = 'Set a channel to start recording DMs.';
+    els.logChannelHint.classList.add('warn');
+  }
+
+  if (data.channels.length === 0) {
+    els.logChannelHint.textContent = 'Channel list unavailable — is the bot connected?';
+    els.logChannelHint.classList.add('warn');
+  }
+
   els.message.value = data.message;
   state.savedMessage = data.message;
   els.messageFile.textContent = data.messageFile ?? 'no template file';
@@ -220,6 +263,27 @@ async function saveRole() {
   } finally {
     els.saveRole.disabled = false;
     els.saveRole.textContent = 'Save role';
+  }
+}
+
+async function saveLogChannel() {
+  const logChannelId = els.logChannelSelect.value;
+  if (!logChannelId) return;
+
+  els.saveLogChannel.disabled = true;
+  els.saveLogChannel.textContent = 'Saving…';
+
+  try {
+    const data = await request('/api/log-channel', { method: 'PUT', body: { logChannelId } });
+    els.logChannelTag.textContent = `#${data.logChannel.name}`;
+    els.logChannelHint.textContent = 'Saved — applies to the next DM.';
+    els.logChannelHint.classList.remove('warn');
+    toast(`Admin log channel set to #${data.logChannel.name}.`);
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    els.saveLogChannel.disabled = false;
+    els.saveLogChannel.textContent = 'Save channel';
   }
 }
 
@@ -343,6 +407,7 @@ async function signOut() {
 
 function wireEvents() {
   els.saveRole.addEventListener('click', saveRole);
+  els.saveLogChannel.addEventListener('click', saveLogChannel);
   els.saveMessage.addEventListener('click', saveMessage);
   els.logout.addEventListener('click', signOut);
   els.message.addEventListener('input', updateCounter);

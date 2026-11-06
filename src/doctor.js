@@ -1,7 +1,8 @@
 import { Client, GatewayIntentBits, PermissionFlagsBits } from 'discord.js';
 import { loadConfig } from './config.js';
-import { checkChannelPermissions, resolveNotificationChannel } from './lib/channel.js';
+import { checkLogChannelPermissions, resolveLogChannel } from './lib/channel.js';
 import { resolveBotMember, waitForGuild } from './lib/guild.js';
+import { loadSettings } from './settings.js';
 
 const INVITE_PERMISSIONS = '85120';
 
@@ -15,8 +16,8 @@ function argumentValue(name) {
 }
 
 /**
- * Preflight check: logs in, then verifies the server, role, delivery target and
- * permissions.
+ * Preflight check: logs in, then verifies the server, role, admin log channel
+ * and permissions.
  *
  *   npm run doctor
  *   npm run doctor -- --send-test
@@ -38,6 +39,8 @@ async function main() {
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
   });
+
+  const settings = loadSettings(config.roleId, config.logChannelId);
 
   let failures = 0;
   const pass = (message) => console.log(`  \u2714 ${message}`);
@@ -65,7 +68,7 @@ async function main() {
   }
 
   console.log(`\nBot account : ${client.user.tag} (${client.user.id})`);
-  console.log(`Delivery    : ${config.delivery}`);
+  console.log(`Delivery    : direct message (DM)`);
   console.log(`Invite URL  : ${inviteUrl(client.user.id)}\n`);
   console.log('Checks:');
 
@@ -75,7 +78,7 @@ async function main() {
   const guild = await waitForGuild(client, config.guildId);
   const botMember = guild ? await resolveBotMember(guild) : null;
 
-  let channel = null;
+  let logChannel = null;
 
   if (!guild) {
     fail(`Bot is not a member of server ${config.guildId}`);
@@ -84,38 +87,38 @@ async function main() {
     pass(`Bot is in server "${guild.name}" (${guild.id})`);
 
     const role =
-      guild.roles.cache.get(config.roleId) ??
-      (await guild.roles.fetch(config.roleId).catch(() => null));
+      guild.roles.cache.get(settings.roleId) ??
+      (await guild.roles.fetch(settings.roleId).catch(() => null));
 
     if (!role) {
-      fail(`Role ${config.roleId} does not exist in "${guild.name}"`);
+      fail(`Role ${settings.roleId} does not exist in "${guild.name}"`);
     } else {
       const managed = role.managed ? ' (managed by an integration)' : '';
       pass(`Watching role "${role.name}" (${role.id})${managed}`);
     }
 
-    if (config.delivery !== 'dm') {
+    if (settings.logChannelId) {
       try {
-        channel = await resolveNotificationChannel(guild, config.channelId);
-        pass(`Notification channel: #${channel.name} (${channel.id})`);
+        logChannel = await resolveLogChannel(guild, settings.logChannelId);
+        pass(`Admin log channel: #${logChannel.name} (${logChannel.id})`);
       } catch (error) {
         fail(error.message);
       }
 
-      if (channel) {
-        const issues = checkChannelPermissions(channel, botMember);
+      if (logChannel) {
+        const issues = checkLogChannelPermissions(logChannel, botMember);
         if (issues.length > 0) {
-          fail(`Missing channel permissions: ${issues.join(', ')}`);
+          fail(`Missing log channel permissions: ${issues.join(', ')}`);
         } else {
-          pass('Bot can View Channel, Send Messages and Embed Links there');
+          pass('Bot can View Channel and Send Messages there');
         }
       }
+    } else {
+      fail('No admin log channel is configured (set LOG_CHANNEL_ID or use the dashboard)');
     }
 
-    if (config.delivery !== 'channel') {
-      pass('Delivery is set to direct message (DM)');
-      note('DMs require that the member shares this server and has "Direct messages from server members" enabled.');
-    }
+    pass('Delivery is set to direct message (DM)');
+    note('DMs require that the member shares this server and has "Direct messages from server members" enabled.');
 
     if (config.web.enabled) {
       note(`Dashboard: http://${config.web.host}:${config.web.port} (Discord login)`);
@@ -133,41 +136,39 @@ async function main() {
     }
 
     if (sendTest) {
-      if (config.delivery !== 'dm' && channel) {
+      if (logChannel) {
         try {
-          await channel.send({
-            content: `\u2705 Test from **${client.user.username}**: channel notifications are configured correctly.`,
+          await logChannel.send({
+            content: `\u2705 Test from **${client.user.username}**: admin log channel is configured correctly.`,
             allowedMentions: { parse: [] },
           });
-          pass('Test message sent to the channel');
+          pass('Test log entry sent to the admin channel');
         } catch (error) {
-          fail(`Test channel message failed: ${error.message}`);
+          fail(`Test log entry failed: ${error.message}`);
         }
       }
 
-      if (config.delivery !== 'channel') {
-        let targetId = dmTargetArgument;
+      let targetId = dmTargetArgument;
 
-        if (!targetId) {
-          targetId = guild.ownerId;
-          note(`No --user given, so the test DM goes to the server owner (${targetId}).`);
-        }
+      if (!targetId) {
+        targetId = guild.ownerId;
+        note(`No --user given, so the test DM goes to the server owner (${targetId}).`);
+      }
 
-        try {
-          const target = await client.users.fetch(targetId);
-          await target.send({
-            content: `\u2705 Test from **${client.user.username}**: DM delivery works.`,
-            allowedMentions: { parse: [] },
-          });
-          pass(`Test DM sent to ${target.username} (${target.id})`);
-        } catch (error) {
-          if (error.code === 50007) {
-            fail(
-              `Could not DM ${targetId}: that account has "Direct messages from server members" disabled, or does not share a server with the bot`,
-            );
-          } else {
-            fail(`Test DM failed: ${error.message}`);
-          }
+      try {
+        const target = await client.users.fetch(targetId);
+        await target.send({
+          content: `\u2705 Test from **${client.user.username}**: DM delivery works.`,
+          allowedMentions: { parse: [] },
+        });
+        pass(`Test DM sent to ${target.username} (${target.id})`);
+      } catch (error) {
+        if (error.code === 50007) {
+          fail(
+            `Could not DM ${targetId}: that account has "Direct messages from server members" disabled, or does not share a server with the bot`,
+          );
+        } else {
+          fail(`Test DM failed: ${error.message}`);
         }
       }
     }

@@ -2,7 +2,7 @@ import { EmbedBuilder } from 'discord.js';
 import { logger } from '../logger.js';
 import { renderTemplate } from '../lib/template.js';
 import { readMessageTemplate } from '../lib/message.js';
-import { checkChannelPermissions, resolveNotificationChannel } from '../lib/channel.js';
+import { checkLogChannelPermissions, resolveLogChannel } from '../lib/channel.js';
 import { findRoleAssignment } from '../lib/audit.js';
 
 const DEDUPE_WINDOW_MS = 15_000;
@@ -32,32 +32,56 @@ async function sendDirectMessage(member, content, embed) {
       allowedMentions: { parse: [] },
     });
     logger.info(`DM sent to ${member.user.username} (${member.id}).`);
+    return { ok: true };
   } catch (error) {
     // 50007 = Cannot send messages to this user (DMs disabled / no shared server).
     if (error.code === 50007) {
-      logger.warn(
-        `Could not DM ${member.user.username} (${member.id}): they do not accept direct messages from server members.`,
-      );
-    } else {
-      logger.error(`Failed to DM ${member.user.username} (${member.id}): ${error.message}`);
+      const reason = 'they do not accept direct messages from server members';
+      logger.warn(`Could not DM ${member.user.username} (${member.id}): ${reason}.`);
+      return { ok: false, reason };
     }
+
+    logger.error(`Failed to DM ${member.user.username} (${member.id}): ${error.message}`);
+    return { ok: false, reason: error.message };
   }
 }
 
-async function sendChannelMessage(channel, member, content, embed, config) {
+/**
+ * Posts a short audit entry to the configured admin channel. Channel problems
+ * are logged but never allowed to affect the DM, which has already been sent.
+ */
+async function postAdminLog(guild, config, content) {
+  if (!config.logChannelId) return;
+
   try {
+    const channel = await resolveLogChannel(guild, config.logChannelId);
+    const issues = checkLogChannelPermissions(channel, guild.members.me);
+
+    if (issues.length > 0) {
+      logger.error(`Cannot post in admin log #${channel.name}: missing ${issues.join(', ')}.`);
+      return;
+    }
+
     await channel.send({
-      content: content || undefined,
-      embeds: embed ? [embed] : [],
-      allowedMentions: {
-        parse: [],
-        users: config.mentionMember ? [member.id] : [],
-      },
+      content: content.slice(0, 2000),
+      allowedMentions: { parse: [] },
     });
-    logger.info(`Channel notification sent to #${channel.name} (${channel.id}).`);
+    logger.info(`Admin log posted in #${channel.name} (${channel.id}).`);
   } catch (error) {
-    logger.error(`Failed to post in #${channel.name} (${channel.id}): ${error.message}`);
+    logger.error(`Failed to post admin log: ${error.message}`);
   }
+}
+
+function describeOutcome(member, roleId, roleName, assignedBy, dm) {
+  const who = `${member.user.username} (${member.id})`;
+  const role = roleName ? `"${roleName}" (<@&${roleId}>)` : `<@&${roleId}>`;
+  const assigner = assignedBy ? `<@${assignedBy.id}>` : 'Unknown';
+
+  if (dm.ok) {
+    return `\u2705 Welcome DM sent to **${who}** for role ${role}. Assigned by ${assigner}.`;
+  }
+
+  return `\u26a0\ufe0f Welcome DM **failed** for **${who}** (role ${role}): ${dm.reason}. Assigned by ${assigner}.`;
 }
 
 export function createGuildMemberUpdateHandler(configOrGetter) {
@@ -91,25 +115,6 @@ export function createGuildMemberUpdateHandler(configOrGetter) {
       );
 
       const guild = newMember.guild;
-      const wantsDm = config.delivery === 'dm' || config.delivery === 'both';
-      const wantsChannel = config.delivery === 'channel' || config.delivery === 'both';
-
-      // Resolve the channel up front, but never let a channel problem block the DM.
-      let channel = null;
-      if (wantsChannel) {
-        try {
-          channel = await resolveNotificationChannel(guild, config.channelId);
-          const issues = checkChannelPermissions(channel, guild.members.me);
-
-          if (issues.length > 0) {
-            logger.error(`Cannot post in #${channel.name}: missing ${issues.join(', ')}.`);
-            channel = null;
-          }
-        } catch (error) {
-          logger.error(error.message);
-          channel = null;
-        }
-      }
 
       const role =
         guild.roles.cache.get(config.roleId) ?? (await guild.roles.fetch(config.roleId).catch(() => null));
@@ -145,15 +150,6 @@ export function createGuildMemberUpdateHandler(configOrGetter) {
           .setFooter({ text: `User ID: ${newMember.id}` })
           .setTimestamp();
 
-        // In a DM the "Member" field would just repeat the recipient.
-        if (wantsChannel) {
-          embed.addFields({
-            name: 'Member',
-            value: `${newMember} (${newMember.user.username})`,
-            inline: true,
-          });
-        }
-
         embed.addFields({
           name: 'Role',
           value: role ? `${role}` : `<@&${config.roleId}>`,
@@ -184,19 +180,19 @@ export function createGuildMemberUpdateHandler(configOrGetter) {
       }
 
       if (config.dryRun) {
-        const targets = [
-          wantsDm ? `DM to ${newMember.user.username}` : null,
-          channel ? `#${channel.name}` : null,
-        ].filter(Boolean);
-
+        const logTarget = config.logChannelId ? ` and log to channel ${config.logChannelId}` : '';
         logger.warn(
-          `[DRY_RUN] Would send to ${targets.length > 0 ? targets.join(' and ') : 'no valid target'}: ${content || '(embed only)'}`,
+          `[DRY_RUN] Would DM ${newMember.user.username} (${newMember.id})${logTarget}: ${content || '(embed only)'}`,
         );
         return;
       }
 
-      if (wantsDm) await sendDirectMessage(newMember, content, embed);
-      if (channel) await sendChannelMessage(channel, newMember, content, embed, config);
+      const dm = await sendDirectMessage(newMember, content, embed);
+      await postAdminLog(
+        guild,
+        config,
+        describeOutcome(newMember, config.roleId, role?.name, assignedBy, dm),
+      );
     } catch (error) {
       logger.error(`Failed to handle role assignment: ${error.message}`, error);
     }

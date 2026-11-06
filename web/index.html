@@ -58,6 +58,25 @@
 
           <section class="card">
             <header class="card-head">
+              <h2>Admin log channel</h2>
+              <span class="tag" id="log-channel-tag">—</span>
+            </header>
+            <p class="muted">
+              Every welcome DM posts a short entry here — who was messaged, which role, and
+              whether it was delivered. A channel problem never blocks the DM.
+            </p>
+            <label class="field">
+              <span>Channel</span>
+              <select id="log-channel-select"></select>
+            </label>
+            <div class="actions">
+              <button type="button" class="primary" id="save-log-channel">Save channel</button>
+              <span class="hint" id="log-channel-hint"></span>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-head">
               <h2>Welcome message</h2>
               <span class="tag" id="message-file">—</span>
             </header>
