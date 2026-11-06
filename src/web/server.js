@@ -340,6 +340,10 @@ async function statePayload(options) {
   const settings = getSettings();
   const role = guild?.roles.cache.get(settings.roleId) ?? null;
   const logChannel = guild?.channels?.cache?.get(settings.logChannelId) ?? null;
+  const onboardingChannel =
+    (settings.onboardingChannelId &&
+      guild?.channels?.cache?.get(settings.onboardingChannelId)) ||
+    null;
 
   const roles = guild
     ? [...guild.roles.cache.values()]
@@ -367,6 +371,10 @@ async function statePayload(options) {
     role: { id: settings.roleId, name: role?.name ?? null },
     roles,
     logChannel: { id: settings.logChannelId, name: logChannel?.name ?? null },
+    onboardingChannel: {
+      id: settings.onboardingChannelId,
+      name: onboardingChannel?.name ?? null,
+    },
     channels,
     message: readMessageTemplate(options.config),
     messageFile: options.config.messageTemplateFile,
@@ -433,6 +441,48 @@ async function updateLogChannel(req, res, options, session) {
   sendJson(res, 200, { ok: true, logChannel: { id: channel.id, name: channel.name } });
 }
 
+async function updateOnboardingChannel(req, res, options, session) {
+  assertCsrf(req, session);
+
+  const body = await readJson(req);
+  const channelId = String(body.onboardingChannelId ?? '').trim();
+
+  const guild = options.getGuild();
+  if (!guild) throw new HttpError(503, 'The bot is not connected to the server yet.');
+
+  if (!channelId) {
+    updateSettings({ onboardingChannelId: '' }, { actor: session.user.username });
+    logger.info(`Onboarding channel disabled by ${session.user.username}.`);
+
+    return sendJson(res, 200, {
+      ok: true,
+      onboardingChannel: { id: '', name: null },
+    });
+  }
+
+  const channel =
+    guild.channels?.cache?.get(channelId) ??
+    (await guild.channels?.fetch(channelId).catch(() => null));
+
+  if (!channel) throw new HttpError(400, 'That channel does not exist in this server.');
+  if (
+    channel.type !== ChannelType.GuildText &&
+    channel.type !== ChannelType.GuildAnnouncement
+  ) {
+    throw new HttpError(400, 'Pick a standard text or announcement channel.');
+  }
+
+  updateSettings({ onboardingChannelId: channel.id }, { actor: session.user.username });
+  logger.info(
+    `Onboarding channel changed to #${channel.name} (${channel.id}) by ${session.user.username}.`,
+  );
+
+  sendJson(res, 200, {
+    ok: true,
+    onboardingChannel: { id: channel.id, name: channel.name },
+  });
+}
+
 async function updateMessage(req, res, options, session) {
   assertCsrf(req, session);
 
@@ -484,6 +534,10 @@ async function handleApi(req, res, options, url, path) {
 
   if (path === '/api/log-channel' && req.method === 'PUT') {
     return updateLogChannel(req, res, options, session);
+  }
+
+  if (path === '/api/onboarding-channel' && req.method === 'PUT') {
+    return updateOnboardingChannel(req, res, options, session);
   }
 
   if (path === '/api/message' && req.method === 'PUT') {

@@ -1,10 +1,15 @@
 import { Client, EmbedBuilder, GatewayIntentBits, PermissionFlagsBits } from 'discord.js';
 import { loadConfig } from './config.js';
-import { checkLogChannelPermissions, resolveLogChannel } from './lib/channel.js';
+import {
+  checkLogChannelPermissions,
+  checkOnboardingChannelPermissions,
+  resolveLogChannel,
+  resolveOnboardingChannel,
+} from './lib/channel.js';
 import { resolveBotMember, waitForGuild } from './lib/guild.js';
 import { loadSettings } from './settings.js';
 
-const INVITE_PERMISSIONS = '85120';
+const INVITE_PERMISSIONS = '268520640';
 
 function inviteUrl(clientId) {
   return `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=${INVITE_PERMISSIONS}&scope=bot`;
@@ -40,7 +45,11 @@ async function main() {
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
   });
 
-  const settings = loadSettings(config.roleId, config.logChannelId);
+  const settings = loadSettings(
+    config.roleId,
+    config.logChannelId,
+    config.onboardingChannelId,
+  );
 
   let failures = 0;
   const pass = (message) => console.log(`  \u2714 ${message}`);
@@ -97,6 +106,20 @@ async function main() {
       pass(`Watching role "${role.name}" (${role.id})${managed}`);
     }
 
+    if (!botMember?.permissions?.has?.(PermissionFlagsBits.ManageRoles)) {
+      fail('Bot lacks Manage Roles, so Accept cannot add the welcome role');
+    } else {
+      pass('Bot can manage roles');
+
+      if (role && botMember.roles?.highest?.comparePositionTo?.(role) <= 0) {
+        fail(
+          `Bot's highest role "${botMember.roles.highest.name}" must be above "${role.name}" to assign it`,
+        );
+      } else if (role) {
+        pass(`Bot's highest role is above "${role.name}"`);
+      }
+    }
+
     if (settings.logChannelId) {
       try {
         logChannel = await resolveLogChannel(guild, settings.logChannelId);
@@ -115,6 +138,27 @@ async function main() {
       }
     } else {
       fail('No admin log channel is configured (set LOG_CHANNEL_ID or use the dashboard)');
+    }
+
+    if (settings.onboardingChannelId) {
+      try {
+        const onboardingChannel = await resolveOnboardingChannel(
+          guild,
+          settings.onboardingChannelId,
+        );
+        pass(`Onboarding channel: #${onboardingChannel.name} (${onboardingChannel.id})`);
+
+        const issues = checkOnboardingChannelPermissions(onboardingChannel, botMember);
+        if (issues.length > 0) {
+          fail(`Missing onboarding channel permissions: ${issues.join(', ')}`);
+        } else {
+          pass('Bot can View Channel, Send Messages, Embed Links, Read Message History and Add Reactions there');
+        }
+      } catch (error) {
+        fail(error.message);
+      }
+    } else {
+      note('Onboarding approvals are disabled (no onboarding channel is configured).');
     }
 
     pass('Delivery is set to direct message (DM)');

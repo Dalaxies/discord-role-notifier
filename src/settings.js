@@ -24,7 +24,7 @@ function persist() {
  * Loads dashboard-managed settings, falling back to the .env values.
  * Call once at startup.
  */
-export function loadSettings(fallbackRoleId, fallbackLogChannelId = '') {
+export function loadSettings(fallbackRoleId, fallbackLogChannelId = '', fallbackOnboardingChannelId = '') {
   if (state) return state;
 
   const file = settingsFile();
@@ -49,9 +49,16 @@ export function loadSettings(fallbackRoleId, fallbackLogChannelId = '') {
       ? stored.logChannelId
       : fallbackLogChannelId;
 
+  const onboardingChannelId =
+    typeof stored.onboardingChannelId === 'string' &&
+    (stored.onboardingChannelId === '' || SNOWFLAKE_RE.test(stored.onboardingChannelId))
+      ? stored.onboardingChannelId
+      : fallbackOnboardingChannelId;
+
   state = {
     roleId,
     logChannelId,
+    onboardingChannelId,
     updatedAt: typeof stored.updatedAt === 'string' ? stored.updatedAt : null,
     updatedBy: typeof stored.updatedBy === 'string' ? stored.updatedBy : null,
   };
@@ -86,6 +93,14 @@ export function updateSettings(patch, { actor = 'dashboard' } = {}) {
       throw new Error('Log channel ID must be a Discord channel ID (17-20 digits).');
     }
     next.logChannelId = logChannelId;
+  }
+
+  if (patch.onboardingChannelId !== undefined) {
+    const onboardingChannelId = String(patch.onboardingChannelId).trim();
+    if (onboardingChannelId !== '' && !SNOWFLAKE_RE.test(onboardingChannelId)) {
+      throw new Error('Onboarding channel ID must be a Discord channel ID (17-20 digits) or empty.');
+    }
+    next.onboardingChannelId = onboardingChannelId;
   }
 
   next.updatedAt = new Date().toISOString();

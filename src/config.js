@@ -7,6 +7,7 @@ const SNOWFLAKE_RE = /^\d{17,20}$/;
 const DEFAULT_GUILD_ID = '1499114258007588914';
 const DEFAULT_ROLE_ID = '1555015410112270458';
 const DEFAULT_LOG_CHANNEL_ID = '1499140628817379459';
+const DEFAULT_ONBOARDING_CHANNEL_ID = '1556007053292605622';
 const DEFAULT_TEMPLATE_FILE = 'templates/welcome.md';
 const DEFAULT_DM_TEMPLATE = 'You were assigned the **{role}** role in **{server}**.';
 const DEFAULT_EMBED_COLOR = 0x57f287;
@@ -87,6 +88,14 @@ export function loadConfig() {
   const logChannelId = envText('LOG_CHANNEL_ID') ?? DEFAULT_LOG_CHANNEL_ID;
   if (logChannelId !== '' && !SNOWFLAKE_RE.test(logChannelId)) {
     errors.push(`LOG_CHANNEL_ID must be a channel ID (17-20 digits) or empty, got "${logChannelId}".`);
+  }
+
+  const onboardingChannelId =
+    envText('ONBOARDING_CHANNEL_ID') ?? DEFAULT_ONBOARDING_CHANNEL_ID;
+  if (onboardingChannelId !== '' && !SNOWFLAKE_RE.test(onboardingChannelId)) {
+    errors.push(
+      `ONBOARDING_CHANNEL_ID must be a channel ID (17-20 digits) or empty, got "${onboardingChannelId}".`,
+    );
   }
 
   const embedEnabled = parseBoolean(errors, 'EMBED_ENABLED', true);
@@ -183,6 +192,7 @@ export function loadConfig() {
     guildId,
     roleId,
     logChannelId,
+    onboardingChannelId,
     messageTemplate,
     messageTemplateFile: fileTemplate === undefined ? null : templateFile,
     embedEnabled,
@@ -215,6 +225,7 @@ export const DEFAULTS = Object.freeze({
   guildId: DEFAULT_GUILD_ID,
   roleId: DEFAULT_ROLE_ID,
   logChannelId: DEFAULT_LOG_CHANNEL_ID,
+  onboardingChannelId: DEFAULT_ONBOARDING_CHANNEL_ID,
   dmTemplate: DEFAULT_DM_TEMPLATE,
   embedColor: DEFAULT_EMBED_COLOR,
 });

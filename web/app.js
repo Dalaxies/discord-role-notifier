@@ -41,6 +41,10 @@ const els = {
   logChannelTag: el('log-channel-tag'),
   logChannelHint: el('log-channel-hint'),
   saveLogChannel: el('save-log-channel'),
+  onboardingChannelSelect: el('onboarding-channel-select'),
+  onboardingChannelTag: el('onboarding-channel-tag'),
+  onboardingChannelHint: el('onboarding-channel-hint'),
+  saveOnboardingChannel: el('save-onboarding-channel'),
   message: el('message'),
   messageFile: el('message-file'),
   counter: el('counter'),
@@ -219,6 +223,51 @@ async function loadState() {
     els.logChannelHint.classList.add('warn');
   }
 
+  els.onboardingChannelSelect.replaceChildren();
+
+  const disabledOption = document.createElement('option');
+  disabledOption.value = '';
+  disabledOption.textContent = 'Disabled — no approval prompts';
+  els.onboardingChannelSelect.append(disabledOption);
+
+  const knownOnboarding = new Set();
+
+  for (const channel of data.channels) {
+    const option = document.createElement('option');
+    option.value = channel.id;
+    option.textContent = `#${channel.name}`;
+    els.onboardingChannelSelect.append(option);
+    knownOnboarding.add(channel.id);
+  }
+
+  if (data.onboardingChannel?.id && !knownOnboarding.has(data.onboardingChannel.id)) {
+    const option = document.createElement('option');
+    option.value = data.onboardingChannel.id;
+    option.textContent = data.onboardingChannel.name
+      ? `#${data.onboardingChannel.name}`
+      : `Unknown channel ${data.onboardingChannel.id}`;
+    els.onboardingChannelSelect.append(option);
+  }
+
+  if (data.onboardingChannel?.id) {
+    els.onboardingChannelSelect.value = data.onboardingChannel.id;
+    els.onboardingChannelTag.textContent = data.onboardingChannel.name
+      ? `#${data.onboardingChannel.name}`
+      : `Unknown channel ${data.onboardingChannel.id}`;
+    els.onboardingChannelHint.textContent = 'Accept/Reject prompts are on.';
+    els.onboardingChannelHint.classList.remove('warn');
+  } else {
+    els.onboardingChannelSelect.value = '';
+    els.onboardingChannelTag.textContent = 'Disabled';
+    els.onboardingChannelHint.textContent = 'No approval prompts will be posted.';
+    els.onboardingChannelHint.classList.add('warn');
+  }
+
+  if (data.channels.length === 0) {
+    els.onboardingChannelHint.textContent = 'Channel list unavailable — is the bot connected?';
+    els.onboardingChannelHint.classList.add('warn');
+  }
+
   els.message.value = data.message;
   state.savedMessage = data.message;
   els.messageFile.textContent = data.messageFile ?? 'no template file';
@@ -284,6 +333,37 @@ async function saveLogChannel() {
   } finally {
     els.saveLogChannel.disabled = false;
     els.saveLogChannel.textContent = 'Save channel';
+  }
+}
+
+async function saveOnboardingChannel() {
+  const onboardingChannelId = els.onboardingChannelSelect.value;
+
+  els.saveOnboardingChannel.disabled = true;
+  els.saveOnboardingChannel.textContent = 'Saving…';
+
+  try {
+    const data = await request('/api/onboarding-channel', {
+      method: 'PUT',
+      body: { onboardingChannelId },
+    });
+
+    if (data.onboardingChannel.id) {
+      els.onboardingChannelTag.textContent = `#${data.onboardingChannel.name}`;
+      els.onboardingChannelHint.textContent = 'Saved — new messages will be reviewed.';
+      els.onboardingChannelHint.classList.remove('warn');
+      toast(`Onboarding channel set to #${data.onboardingChannel.name}.`);
+    } else {
+      els.onboardingChannelTag.textContent = 'Disabled';
+      els.onboardingChannelHint.textContent = 'Saved — no approval prompts will be posted.';
+      els.onboardingChannelHint.classList.add('warn');
+      toast('Onboarding approvals disabled.');
+    }
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    els.saveOnboardingChannel.disabled = false;
+    els.saveOnboardingChannel.textContent = 'Save channel';
   }
 }
 
@@ -408,6 +488,7 @@ async function signOut() {
 function wireEvents() {
   els.saveRole.addEventListener('click', saveRole);
   els.saveLogChannel.addEventListener('click', saveLogChannel);
+  els.saveOnboardingChannel.addEventListener('click', saveOnboardingChannel);
   els.saveMessage.addEventListener('click', saveMessage);
   els.logout.addEventListener('click', signOut);
   els.message.addEventListener('input', updateCounter);

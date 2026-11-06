@@ -2,6 +2,8 @@
 
 Sends a **direct message (DM)** to a member whenever they are given a specific role. Every DM is also recorded as an embed in a configurable **admin log channel** for auditing.
 
+An optional **onboarding channel** turns that into a review workflow: when a member without the role posts there, the bot replies with **Accept** and **Reject** buttons. Moderators with **Manage Roles** can accept (the bot grants the role, which triggers the welcome DM) or reject (the decision is recorded in the admin log).
+
 | Setting | Value |
 | --- | --- |
 | Server (guild) ID | `1499114258007588914` |
@@ -38,6 +40,8 @@ Discord Gateway  ──(outbound WSS 443)──►  Node.js bot  ──►  Disc
 
 - The bot opens an **outbound** connection to Discord. It needs **no inbound ports, no domain name and no public web server**.
 - It listens for `guildMemberUpdate`, compares the member's roles before/after the event, and reacts only when the watched role was **added**.
+- If an onboarding channel is configured, every message there from a member who lacks the welcome role gets an Accept/Reject prompt as a reply.
+- **Accept** grants the role (the same event path as a manual assignment), so the welcome DM and admin log fire exactly as usual. The log names the moderator who approved it. **Reject** adds a 👎 reaction and records the decision in the admin log without granting anything.
 - It then sends the welcome message by DM, and posts an embedded audit entry to the admin log channel (success or failure).
 - Optionally it reads the server audit log to show **who** assigned the role.
 - It runs as a single process. Memory use is roughly 80–150 MB.
@@ -50,7 +54,7 @@ Discord Gateway  ──(outbound WSS 443)──►  Node.js bot  ──►  Disc
 2. Go to **Bot** in the sidebar.
 3. Click **Reset Token** and copy the token. This is a password — never commit it or paste it in public.
 4. Under **Privileged Gateway Intents**, enable **Server Members Intent**. The bot will not receive role-change events without it.
-   - *Message Content Intent* is **not** needed.
+   - *Message Content Intent* is **not** needed. The bot subscribes to the non-privileged Guild Messages intent only to notice that a message was posted; it never reads the text.
 5. Save changes.
 
 ## 2. Invite the bot to your server
@@ -62,15 +66,19 @@ Or build it manually:
 1. **OAuth2 → URL Generator**
 2. Scopes: `bot`
 3. Bot permissions:
+   - Manage Roles (so **Accept** can grant the welcome role)
    - View Audit Log (for the "Assigned by" field; skip if `LOOKUP_AUDIT_LOG=false`)
    - View Channels, Send Messages and Embed Links in the admin log channel
+   - View Channels, Send Messages, Embed Links, Read Message History and Add Reactions in the onboarding channel
 4. Open the generated URL, pick server `1499114258007588914`, and authorize.
 
-The equivalent permissions integer is `85120`:
+The equivalent permissions integer is `268520640`:
 
 ```
-https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&permissions=85120&scope=bot
+https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&permissions=268520640&scope=bot
 ```
+
+> **Manage Roles is powerful.** Grant it only because **Accept** must assign the welcome role. The bot can only assign roles **below its own highest role**, and it cannot modify members whose highest role is above it. If the bot already has a different permission set, either re-invite it with the URL above or grant Manage Roles to its existing role in **Server Settings → Roles**.
 
 ## 3. Collect the IDs
 
@@ -79,8 +87,9 @@ In Discord: **User Settings → Advanced → Developer Mode** → ON. Then:
 - Right-click the server → **Copy Server ID** → `GUILD_ID`
 - Right-click the role → **Copy Role ID** → `ROLE_ID`
 - Right-click the admin log channel → **Copy Channel ID** → `LOG_CHANNEL_ID` (the dashboard can set this too)
+- Right-click the onboarding channel → **Copy Channel ID** → `ONBOARDING_CHANNEL_ID` (the dashboard can set this too)
 
-The defaults are already set for server `1499114258007588914` and role `1555015410112270458`.
+The defaults are already set for server `1499114258007588914`, role `1555015410112270458`, admin log `1499140628817379459` and onboarding `1556007053292605622`.
 
 ---
 
@@ -99,6 +108,8 @@ DISCORD_TOKEN=your-bot-token
 
 `LOG_CHANNEL_ID` already defaults to `1499140628817379459`, so the admin log works without further configuration. Change it in `.env` or in the dashboard.
 
+`ONBOARDING_CHANNEL_ID` defaults to `1556007053292605622`. Set it empty (or choose **Disabled** in the dashboard) to turn the approval workflow off.
+
 `GUILD_ID` and `ROLE_ID` default to the values above but are explicit in `.env.example` so they are easy to change.
 
 ### All settings
@@ -109,6 +120,7 @@ DISCORD_TOKEN=your-bot-token
 | `GUILD_ID` | `1499114258007588914` | Server to watch. |
 | `ROLE_ID` | `1555015410112270458` | Role that triggers a notification when added. |
 | `LOG_CHANNEL_ID` | `1499140628817379459` | Channel that receives an embedded audit entry after every DM. Empty disables channel logging. Overridden by the dashboard. |
+| `ONBOARDING_CHANNEL_ID` | `1556007053292605622` | Channel where messages from members without the welcome role get Accept/Reject prompts. Empty disables the workflow. Overridden by the dashboard. |
 | `MESSAGE_TEMPLATE` | `templates/welcome.md` | Text above the embed. An explicit value here overrides the bundled file. Empty = embed only. |
 | `MESSAGE_TEMPLATE_FILE` | `templates/welcome.md` | Path to a file containing the message (relative to the project directory). Takes precedence over `MESSAGE_TEMPLATE`. Ideal for multi-line messages. |
 | `EMBED_ENABLED` | `true` | Send the details embed after the text. Set `false` to send only your message. |
@@ -188,6 +200,8 @@ Unknown placeholders are left untouched, so a typo shows up as `{typo}` in Disco
 
 5. In Discord, assign the role to a test member. The console should show the event, the member should receive a DM, and the admin log channel should receive an embedded audit entry. Remove the role and assign it again to confirm it fires on each new assignment.
 
+6. Test onboarding: post a message in the onboarding channel from an account without the welcome role. The bot should reply with an **Accept**/**Reject** prompt. Click **Accept** as a member with Manage Roles: the message gets a 👍, the role is granted, the welcome DM is sent, and the admin log names you as the approver. Repeat with **Reject** on another message: it gets a 👎 and the admin log records the rejection.
+
 `npm run dev` restarts automatically when source files change.
 
 ### Sending the message on demand
@@ -205,7 +219,7 @@ It uses the same template (`MESSAGE_TEMPLATE_FILE` or `MESSAGE_TEMPLATE`) and re
 
 ## 6. Web dashboard (optional)
 
-A small dashboard lets a server admin pick the welcome role, choose the admin log channel, edit the welcome message and watch the bot's log live. Login uses Discord OAuth2; only the server owner or members with **Manage Server** can sign in.
+A small dashboard lets a server admin pick the welcome role, choose the admin log channel, choose the onboarding channel, edit the welcome message and watch the bot's log live. Login uses Discord OAuth2; only the server owner or members with **Manage Server** can sign in.
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
@@ -253,10 +267,13 @@ Restart the bot, then open <http://localhost:3000>.
 | --- | --- |
 | **Welcome role** | Lists every role in the server. Saving writes `data/settings.json` and applies to the next role assignment — no restart. |
 | **Admin log channel** | Lists text and announcement channels. Saving writes `data/settings.json`; the next DM is logged there. |
+| **Onboarding channel** | Lists text and announcement channels plus **Disabled**. Saving writes `data/settings.json`; the next message in the chosen channel is reviewed. |
 | **Welcome message** | Edits `MESSAGE_TEMPLATE_FILE` in place. The next DM uses it (the file is re-read per send). |
 | **Activity** | Live log stream over SSE, with level filter and pause. Last 500 lines are kept in memory. |
 
 Sessions are stored in memory, so a restart signs everyone out. The bot token never reaches the browser.
+
+> **Button visibility:** Discord does not support hiding message buttons per role. The Accept/Reject buttons are visible to everyone who can read the channel, but the bot verifies **Manage Roles** on every click and refuses anyone without it. No role is changed before that check.
 
 ### Remote access (recommended)
 
@@ -306,7 +323,7 @@ On the server, after cloning the project:
 ```bash
 cd ~/discord-role-notifier
 sudo bash deploy/install.sh      # creates /opt/discord-role-notifier and a .env
-sudo nano /opt/discord-role-notifier/.env   # token; LOG_CHANNEL_ID if changing the default
+sudo nano /opt/discord-role-notifier/.env   # token; LOG_CHANNEL_ID / ONBOARDING_CHANNEL_ID if changing defaults
 sudo systemctl enable --now discord-role-notifier
 sudo journalctl -u discord-role-notifier -f
 ```
@@ -323,13 +340,17 @@ sudo journalctl -u discord-role-notifier -f
 │   ├── doctor.js                      # preflight checks
 │   ├── logger.js                      # console + in-memory log buffer
 │   ├── settings.js                    # dashboard-managed settings
-│   ├── events/guild-member-update.js  # role-added detection + message
+│   ├── events/
+│   │   ├── guild-member-update.js      # role-added detection + DM/log
+│   │   └── onboarding.js               # onboarding prompts + button handling
 │   ├── web/
 │   │   ├── server.js                   # dashboard HTTP server + API
 │   │   └── auth.js                     # Discord OAuth2, sessions, admin check
 │   └── lib/
+│       ├── admin-log.js                # shared admin-channel embeds
+│       ├── approvals.js                # onboarding -> assigner attribution
 │       ├── audit.js                    # "assigned by" lookup
-│       ├── channel.js                  # admin log channel + permission checks
+│       ├── channel.js                  # channel resolution + permission checks
 │       ├── guild.js                    # guild/member resolution after READY
 │       ├── message.js                  # template file loading (hot reload)
 │       └── template.js                 # {placeholder} rendering
@@ -370,6 +391,10 @@ sudo journalctl -u discord-role-notifier -f
 | Admin channel gets no entries | Check `LOG_CHANNEL_ID` (or the dashboard setting), and give the bot View Channel, Send Messages and Embed Links there. Run `npm run doctor`. |
 | `Cannot post in admin log #channel: missing …` | Give the bot View Channel, Send Messages and Embed Links in that channel (channel-level overrides can block it). |
 | `LOG_CHANNEL_ID … was not found` | Wrong channel ID, or the bot cannot see that channel. Set it again in the dashboard or `.env`. |
+| No Accept/Reject prompt in the onboarding channel | Check `ONBOARDING_CHANNEL_ID` (or the dashboard value), and give the bot View Channel, Send Messages, Embed Links, Read Message History and Add Reactions there. The member must not already have the welcome role, and bot/webhook messages are ignored. |
+| Accept says "role could not be added" | Grant **Manage Roles**, and move the bot's own role above the welcome role in **Server Settings → Roles**. |
+| Anyone can see the Accept/Reject buttons | Expected — Discord cannot hide components per role. Clicking without Manage Roles is refused before anything changes. |
+| Onboarding prompt never appears for a member | The member may already have the welcome role, or the message was sent in a thread. Threads have their own channel ID; use the parent channel. |
 | Message arrives twice | Two copies of the bot are running (e.g. local + server). Stop one. |
 | Message on nickname change | Should not happen — the code compares role sets. If it does, set `LOG_LEVEL=debug` and open an issue with the log. |
 | `Unknown Channel` / `Missing Access` | Bot was removed from the server or lost channel access; re-invite and check permissions. |
@@ -385,10 +410,10 @@ sudo journalctl -u discord-role-notifier -f
 - A role added **by another bot** still triggers the notification (unless the member is a bot and `IGNORE_BOTS=true`).
 - DMs require a shared server and the member's consent (the "Direct messages from server members" privacy setting). Discord does not let bots bypass this.
 - A failed DM is still recorded in the admin log channel, but a broken log channel never stops the DM — each target is independent.
-- "Assigned by" comes from the audit log and is best-effort: it can show `Unknown` if the bot lacks View Audit Log or the entry is older than ~20 seconds.
-- The bot needs no privileged message content access, and it does not read message history.
+- "Assigned by" for a manual role change comes from the audit log and is best-effort: it can show `Unknown` if the bot lacks View Audit Log or the entry is older than ~20 seconds. An onboarding approval is attributed to the moderator who clicked Accept.
+- Onboarding reads no message content and does not store messages; it only reacts to the `MessageCreate` event to post a prompt.
 - Discord rate limits are handled by discord.js; a single message per role assignment is far below any limit.
-- Role hierarchy does not matter for *notifications*; the bot only needs permission to post in the admin log channel.
+- Role hierarchy matters for **Accept**: the bot's highest role must be above the welcome role, and it cannot modify a member whose highest role is above the bot's. Notifications themselves do not depend on hierarchy.
 
 ---
 
@@ -396,7 +421,7 @@ sudo journalctl -u discord-role-notifier -f
 
 - Treat `DISCORD_TOKEN` like a password. It is excluded via `.gitignore`; on the server `install.sh` sets `.env` to mode `600`.
 - If the token leaks, click **Reset Token** in the Developer Portal and update `.env`.
-- Keep the bot's permissions minimal (View Audit Log, plus View Channel, Send Messages and Embed Links in the admin log channel).
+- Keep the bot's permissions minimal (Manage Roles, View Audit Log, plus View Channel, Send Messages and Embed Links in the admin log channel; View Channel, Send Messages, Embed Links, Read Message History and Add Reactions in the onboarding channel).
 - The dashboard adds no public port when left on `127.0.0.1`; reach it through an SSH tunnel. To expose it, run `deploy/setup-caddy.sh` (HTTPS via Caddy) and set `WEB_COOKIE_SECURE=true`.
 - Dashboard sessions are in memory and expire after `SESSION_TTL_HOURS` (default 12). The bot token and OAuth access tokens are never stored in the browser.
 - For OCI, restrict SSH ingress to your own IP address and keep the OS patched — see the deployment guide.

@@ -1,13 +1,22 @@
-import { Client, Events, GatewayIntentBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, Partials, PermissionFlagsBits } from 'discord.js';
 import { loadConfig } from './config.js';
 import { logger } from './logger.js';
 import { createGuildMemberUpdateHandler } from './events/guild-member-update.js';
-import { checkLogChannelPermissions, resolveLogChannel } from './lib/channel.js';
+import {
+  createOnboardingInteractionHandler,
+  createOnboardingMessageHandler,
+} from './events/onboarding.js';
+import {
+  checkLogChannelPermissions,
+  checkOnboardingChannelPermissions,
+  resolveLogChannel,
+  resolveOnboardingChannel,
+} from './lib/channel.js';
 import { resolveBotMember, waitForGuild } from './lib/guild.js';
 import { getSettings, loadSettings } from './settings.js';
 import { startWebServer } from './web/server.js';
 
-const INVITE_PERMISSIONS = '85120';
+const INVITE_PERMISSIONS = '268520640';
 
 function inviteUrl(clientId) {
   return `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=${INVITE_PERMISSIONS}&scope=bot`;
@@ -15,7 +24,11 @@ function inviteUrl(clientId) {
 
 async function main() {
   const config = loadConfig();
-  const settings = loadSettings(config.roleId, config.logChannelId);
+  const settings = loadSettings(
+    config.roleId,
+    config.logChannelId,
+    config.onboardingChannelId,
+  );
 
   // DELIVERY and CHANNEL_ID configured channel copies of the welcome message,
   // which no longer exist. Say so once instead of silently ignoring them.
@@ -39,13 +52,22 @@ async function main() {
     ...config,
     roleId: getSettings().roleId,
     logChannelId: getSettings().logChannelId,
+    onboardingChannelId: getSettings().onboardingChannelId,
   });
 
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildMessages,
+    ],
+    // Message and channel payloads for uncached onboarding messages.
+    partials: [Partials.Channel, Partials.Message],
   });
 
   client.on(Events.GuildMemberUpdate, createGuildMemberUpdateHandler(currentConfig));
+  client.on(Events.MessageCreate, createOnboardingMessageHandler(currentConfig));
+  client.on(Events.InteractionCreate, createOnboardingInteractionHandler(currentConfig));
   client.on(Events.Warn, (message) => logger.warn(message));
   client.on(Events.Error, (error) => logger.error(`Gateway error: ${error.message}`, error));
 
@@ -65,12 +87,12 @@ async function main() {
 
     logger.info(`Watching server "${guild.name}" (${guild.id}) for role ${settings.roleId}`);
 
-    const cachedRole = guild.roles.cache.get(settings.roleId);
-    if (cachedRole) {
-      logger.info(`Role "${cachedRole.name}" resolved.`);
+    let resolvedRole = guild.roles.cache.get(settings.roleId) ?? null;
+    if (resolvedRole) {
+      logger.info(`Role "${resolvedRole.name}" resolved.`);
     } else {
-      const role = await guild.roles.fetch(settings.roleId).catch(() => null);
-      if (role) logger.info(`Role "${role.name}" resolved.`);
+      resolvedRole = await guild.roles.fetch(settings.roleId).catch(() => null);
+      if (resolvedRole) logger.info(`Role "${resolvedRole.name}" resolved.`);
       else logger.error(`Role ${settings.roleId} was not found in "${guild.name}". Check ROLE_ID.`);
     }
 
@@ -83,10 +105,28 @@ async function main() {
     logger.info('Notifications will be sent as direct messages to the member.');
     logger.info('Members must share this server and allow "Direct messages from server members".');
 
+    const botMember = await resolveBotMember(guild);
+    const missingManageRoles =
+      !botMember?.permissions?.has?.(PermissionFlagsBits.ManageRoles);
+    const roleTooHigh =
+      botMember && resolvedRole
+        ? botMember.roles.highest.comparePositionTo(resolvedRole) <= 0
+        : false;
+
+    if (missingManageRoles) {
+      logger.error(
+        'The bot lacks Manage Roles, so Accept cannot add the welcome role. Grant it in Server Settings -> Roles.',
+      );
+    } else if (roleTooHigh) {
+      logger.error(
+        `The bot's highest role "${botMember.roles.highest.name}" must be above "${resolvedRole.name}" before it can assign it.`,
+      );
+    }
+
     if (settings.logChannelId) {
       try {
         const channel = await resolveLogChannel(guild, settings.logChannelId);
-        const issues = checkLogChannelPermissions(channel, await resolveBotMember(guild));
+        const issues = checkLogChannelPermissions(channel, botMember);
 
         if (issues.length > 0) {
           logger.error(`Missing permissions in admin log #${channel.name}: ${issues.join(', ')}`);
@@ -98,6 +138,27 @@ async function main() {
       }
     } else {
       logger.warn('No admin log channel is configured; DMs will not be recorded in a channel.');
+    }
+
+    if (settings.onboardingChannelId) {
+      try {
+        const channel = await resolveOnboardingChannel(guild, settings.onboardingChannelId);
+        const issues = checkOnboardingChannelPermissions(channel, botMember);
+
+        if (issues.length > 0) {
+          logger.error(
+            `Missing permissions in onboarding channel #${channel.name}: ${issues.join(', ')}`,
+          );
+        } else {
+          logger.info(
+            `Onboarding reviews will be posted in #${channel.name} (${channel.id}).`,
+          );
+        }
+      } catch (error) {
+        logger.error(error.message);
+      }
+    } else {
+      logger.info('Onboarding reviews are disabled (no onboarding channel is configured).');
     }
 
     if (config.dryRun) {

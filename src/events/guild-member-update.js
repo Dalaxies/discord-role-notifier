@@ -2,7 +2,8 @@ import { EmbedBuilder } from 'discord.js';
 import { logger } from '../logger.js';
 import { renderTemplate } from '../lib/template.js';
 import { readMessageTemplate } from '../lib/message.js';
-import { checkLogChannelPermissions, resolveLogChannel } from '../lib/channel.js';
+import { postAdminLog } from '../lib/admin-log.js';
+import { takeApproval } from '../lib/approvals.js';
 import { findRoleAssignment } from '../lib/audit.js';
 
 const DEDUPE_WINDOW_MS = 15_000;
@@ -47,37 +48,15 @@ async function sendDirectMessage(member, content, embed) {
 }
 
 /**
- * Posts a short audit entry to the configured admin channel. Channel problems
- * are logged but never allowed to affect the DM, which has already been sent.
+ * Builds the audit entry for a welcome DM. When the role came from an
+ * onboarding approval, the approver is named instead of the bot.
  */
-async function postAdminLog(guild, config, embed) {
-  if (!config.logChannelId) return;
-
-  try {
-    const channel = await resolveLogChannel(guild, config.logChannelId);
-    const issues = checkLogChannelPermissions(channel, guild.members.me);
-
-    if (issues.length > 0) {
-      logger.error(`Cannot post in admin log #${channel.name}: missing ${issues.join(', ')}.`);
-      return;
-    }
-
-    await channel.send({
-      embeds: [embed],
-      allowedMentions: { parse: [] },
-    });
-    logger.info(`Admin log posted in #${channel.name} (${channel.id}).`);
-  } catch (error) {
-    logger.error(`Failed to post admin log: ${error.message}`);
-  }
-}
-
-function buildLogEmbed(member, roleId, roleName, assignedBy, dm) {
+function buildLogEmbed(member, roleId, roleName, assignedBy, dm, approval) {
   const name = `${member.user.username} (${member.id})`;
   const role = roleName ? `**${roleName}** (<@&${roleId}>)` : `<@&${roleId}>`;
   const assigner = assignedBy ? `<@${assignedBy.id}>` : 'Unknown';
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(dm.ok ? 0x57f287 : 0xfaa61a)
     .setAuthor({ name, iconURL: member.displayAvatarURL() })
     .setTitle(dm.ok ? '\u2705 Welcome DM sent' : '\u26a0\ufe0f Welcome DM failed')
@@ -93,6 +72,17 @@ function buildLogEmbed(member, roleId, roleName, assignedBy, dm) {
     )
     .setFooter({ text: 'Role notifier \u00b7 admin log' })
     .setTimestamp();
+
+  if (approval) {
+    const url = `https://discord.com/channels/${member.guild.id}/${approval.channelId}/${approval.messageId}`;
+    embed.addFields({
+      name: 'Review',
+      value: `Approved via [onboarding](${url})`,
+      inline: false,
+    });
+  }
+
+  return embed;
 }
 
 export function createGuildMemberUpdateHandler(configOrGetter) {
@@ -129,9 +119,15 @@ export function createGuildMemberUpdateHandler(configOrGetter) {
 
       const role =
         guild.roles.cache.get(config.roleId) ?? (await guild.roles.fetch(config.roleId).catch(() => null));
-      const assignedBy = config.lookupAuditLog
-        ? await findRoleAssignment(guild, newMember.id, config.roleId)
-        : null;
+
+      // An onboarding approval is authoritative: the audit log would credit the
+      // bot, so prefer the moderator who clicked Accept.
+      const approval = takeApproval(guild.id, newMember.id);
+      const assignedBy = approval
+        ? { id: approval.approverId }
+        : config.lookupAuditLog
+          ? await findRoleAssignment(guild, newMember.id, config.roleId)
+          : null;
 
       const values = {
         user: `<@${newMember.id}>`,
@@ -201,8 +197,8 @@ export function createGuildMemberUpdateHandler(configOrGetter) {
       const dm = await sendDirectMessage(newMember, content, embed);
       await postAdminLog(
         guild,
-        config,
-        buildLogEmbed(newMember, config.roleId, role?.name, assignedBy, dm),
+        config.logChannelId,
+        buildLogEmbed(newMember, config.roleId, role?.name, assignedBy, dm, approval),
       );
     } catch (error) {
       logger.error(`Failed to handle role assignment: ${error.message}`, error);

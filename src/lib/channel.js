@@ -7,20 +7,25 @@ const LOG_CHANNEL_PERMISSIONS = [
   [PermissionFlagsBits.EmbedLinks, 'Embed Links'],
 ];
 
+// The onboarding prompt is an embed with buttons. Reacting to the original
+// message needs Add Reactions, and fetching it after a restart needs Read
+// Message History.
+const ONBOARDING_CHANNEL_PERMISSIONS = [
+  [PermissionFlagsBits.ViewChannel, 'View Channel'],
+  [PermissionFlagsBits.SendMessages, 'Send Messages'],
+  [PermissionFlagsBits.EmbedLinks, 'Embed Links'],
+  [PermissionFlagsBits.ReadMessageHistory, 'Read Message History'],
+  [PermissionFlagsBits.AddReactions, 'Add Reactions'],
+];
+
 const TEXT_CHANNEL_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
 
-/**
- * Returns the channel the bot posts its admin log to, or null when logging is
- * disabled (LOG_CHANNEL_ID was emptied).
- */
-export async function resolveLogChannel(guild, channelId) {
-  if (!channelId) return null;
-
+async function resolveTextChannel(guild, channelId, label) {
   const cached = guild.channels.cache.get(channelId);
   const channel = cached ?? (await guild.channels.fetch(channelId).catch(() => null));
 
   if (!channel) {
-    throw new Error(`LOG_CHANNEL_ID ${channelId} was not found in "${guild.name}".`);
+    throw new Error(`${label} ${channelId} was not found in "${guild.name}".`);
   }
 
   if (!TEXT_CHANNEL_TYPES.has(channel.type)) {
@@ -32,12 +37,39 @@ export async function resolveLogChannel(guild, channelId) {
   return channel;
 }
 
-/** Returns a list of human-readable permissions the bot is missing. */
-export function checkLogChannelPermissions(channel, botMember) {
+/**
+ * Returns the channel the bot posts its admin log to, or null when logging is
+ * disabled (LOG_CHANNEL_ID was emptied).
+ */
+export async function resolveLogChannel(guild, channelId) {
+  if (!channelId) return null;
+  return resolveTextChannel(guild, channelId, 'LOG_CHANNEL_ID');
+}
+
+/**
+ * Returns the channel where onboarding review prompts are posted, or null when
+ * onboarding approvals are disabled.
+ */
+export async function resolveOnboardingChannel(guild, channelId) {
+  if (!channelId) return null;
+  return resolveTextChannel(guild, channelId, 'ONBOARDING_CHANNEL_ID');
+}
+
+function missingPermissions(channel, botMember, required) {
   if (!botMember) return ['bot is not a member of the server'];
 
   const permissions = channel.permissionsFor(botMember);
   if (!permissions) return ['channel permissions could not be calculated'];
 
-  return LOG_CHANNEL_PERMISSIONS.filter(([bit]) => !permissions.has(bit)).map(([, name]) => name);
+  return required.filter(([bit]) => !permissions.has(bit)).map(([, name]) => name);
+}
+
+/** Returns a list of human-readable permissions the bot is missing. */
+export function checkLogChannelPermissions(channel, botMember) {
+  return missingPermissions(channel, botMember, LOG_CHANNEL_PERMISSIONS);
+}
+
+/** Returns a list of human-readable permissions the bot is missing. */
+export function checkOnboardingChannelPermissions(channel, botMember) {
+  return missingPermissions(channel, botMember, ONBOARDING_CHANNEL_PERMISSIONS);
 }

@@ -12,8 +12,8 @@ This walks through everything from a blank OCI account to a bot that survives re
 
 - [ ] Discord application created, bot token copied
 - [ ] **Server Members Intent** enabled
-- [ ] Bot invited to server `1499114258007588914` with View Channels, Send Messages, Embed Links, View Audit Log
-- [ ] `GUILD_ID` and `ROLE_ID` noted, and an admin log channel chosen (defaults to `1499140628817379459`)
+- [ ] Bot invited to server `1499114258007588914` with Manage Roles, View Audit Log, View Channels, Send Messages, Embed Links, Read Message History and Add Reactions
+- [ ] `GUILD_ID` and `ROLE_ID` noted, an admin log channel chosen (defaults to `1499140628817379459`), and an onboarding channel chosen (defaults to `1556007053292605622`)
 - [ ] Project runs locally (`npm run doctor` passes)
 
 If not, do [README steps 1–5](README.md#1-create-the-discord-application) first. Debugging the bot locally is much faster than debugging it through SSH.
@@ -232,6 +232,8 @@ DISCORD_TOKEN=your-token-here
 
 Welcome messages are always sent as DMs. `LOG_CHANNEL_ID` defaults to `1499140628817379459`; every DM posts a short embedded audit entry there (who was messaged, which role, and whether delivery succeeded). Change it here or in the dashboard, or set it empty to disable channel logging.
 
+`ONBOARDING_CHANNEL_ID` defaults to `1556007053292605622`. Messages there from members without the welcome role get Accept/Reject prompts; **Accept** grants the role, **Reject** records the decision in the admin log. Set it empty (or choose **Disabled** in the dashboard) to turn the workflow off. The bot needs **Manage Roles**, and its own role must be above the welcome role.
+
 The message is already `templates/welcome.md` — no configuration needed. A details embed follows it by default; to send the text on its own, add:
 
 ```dotenv
@@ -287,7 +289,7 @@ You want `active (running)` and `enabled`.
 
 ### Optional: web dashboard
 
-The bot can serve a small dashboard for picking the welcome role, choosing the admin log channel, editing the welcome message and watching the log live. It is off by default and only listens on `127.0.0.1`.
+The bot can serve a small dashboard for picking the welcome role, choosing the admin log channel, choosing the onboarding channel, editing the welcome message and watching the log live. It is off by default and only listens on `127.0.0.1`.
 
 1. In the Developer Portal → your application → **OAuth2**:
    - copy the **Client Secret**
@@ -454,6 +456,7 @@ Finally, in Discord:
 2. Confirm the member receives the DM and the admin log channel receives an embedded audit entry.
 3. Remove the role, then give it again — it should fire again.
 4. Try assigning it from a different moderator account and confirm "Assigned by" is correct.
+5. Post in the onboarding channel from an account without the role. Click **Accept** as a moderator with Manage Roles: the message gets a 👍, the role is granted, the DM is sent, and the log names the approver. Click **Reject** on another message: it gets a 👎 and the log records the rejection.
 
 > If nothing arrives, `sudo journalctl -u discord-role-notifier -n 100 --no-pager` usually names the exact problem (wrong IDs, missing permission, missing intent, or — for DMs — the member's privacy setting).
 
@@ -814,6 +817,9 @@ Kernel updates still require a reboot; schedule one during a quiet period.
 | Bot online, no notification | `sudo bash -c 'cd /opt/discord-role-notifier && npm run doctor'`. Check role/guild IDs and the admin log channel. |
 | Member never receives a DM | Their Discord **Privacy & Safety → Direct messages from server members** setting is off, or they don't share the server. The log and admin channel show error `50007`; delivery cannot be forced. |
 | Admin log gets no entries | Check `LOG_CHANNEL_ID` (or the dashboard value) and give the bot View Channel, Send Messages and Embed Links there. |
+| No Accept/Reject prompt in the onboarding channel | Check `ONBOARDING_CHANNEL_ID` (or the dashboard value) and give the bot View Channel, Send Messages, Embed Links, Read Message History and Add Reactions there. The member must not already have the role. |
+| Accept says the role could not be added | Grant **Manage Roles** and move the bot's role above the welcome role in **Server Settings → Roles**. |
+| Buttons visible to everyone | Expected — Discord cannot hide components per role. Clicking without Manage Roles is refused before any change. |
 | `Used disallowed intents` | Enable **Server Members Intent** in the Developer Portal. |
 | `Missing Access` / `Unknown Channel` | The bot cannot see the admin log channel: re-invite it or grant View Channel there. |
 | "Assigned by: Unknown" | Give the bot **View Audit Log**, or set `LOOKUP_AUDIT_LOG=false` to hide the field. |

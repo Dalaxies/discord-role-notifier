@@ -77,6 +77,26 @@
 
           <section class="card">
             <header class="card-head">
+              <h2>Onboarding channel</h2>
+              <span class="tag" id="onboarding-channel-tag">—</span>
+            </header>
+            <p class="muted">
+              Each message here from a member without the welcome role gets an Accept/Reject
+              prompt. Members with <strong>Manage Roles</strong> approve or reject; a rejected
+              member stays unroled. Choose “Disabled” to stop posting prompts.
+            </p>
+            <label class="field">
+              <span>Channel</span>
+              <select id="onboarding-channel-select"></select>
+            </label>
+            <div class="actions">
+              <button type="button" class="primary" id="save-onboarding-channel">Save channel</button>
+              <span class="hint" id="onboarding-channel-hint"></span>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-head">
               <h2>Welcome message</h2>
               <span class="tag" id="message-file">—</span>
             </header>
